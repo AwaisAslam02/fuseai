@@ -351,10 +351,12 @@ export default function ProjectsPage() {
                  </div>
                </div>
 
-               <button className="w-full flex items-center justify-center space-x-2 bg-black dark:bg-white text-white dark:text-black px-3 py-1.5 rounded-md hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-xs font-medium">
-                 <Eye className="w-3 h-3" />
-                 <span>View Details</span>
-               </button>
+                             <Link href={`/projects/${project.id}`}>
+                <button className="w-full flex items-center justify-center space-x-2 bg-black dark:bg-white text-white dark:text-black px-3 py-1.5 rounded-md hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-xs font-medium">
+                  <Eye className="w-3 h-3" />
+                  <span>View Details</span>
+                </button>
+              </Link>
             </motion.div>
           ))}
         </div>
