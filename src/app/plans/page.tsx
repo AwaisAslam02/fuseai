@@ -7,9 +7,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '@/components/theme-provider';
 import Navbar from '@/components/navbar';
+import { useToast } from "@/hooks/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 
 export default function PlansPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -30,7 +33,8 @@ export default function PlansPage() {
       icon: Star,
       popular: false,
       buttonText: 'Get Started',
-      buttonAction: () => router.push('/chat')
+      buttonAction: () => router.push('/chat'),
+      message_limit: 50
     },
     {
       id: 'professional',
@@ -51,7 +55,8 @@ export default function PlansPage() {
       icon: Zap,
       popular: true,
       buttonText: 'Start Free Trial',
-      buttonAction: () => router.push('/chat')
+      buttonAction: () => router.push('/chat'),
+      message_limit: 1000
     },
     {
       id: 'enterprise',
@@ -72,7 +77,8 @@ export default function PlansPage() {
       icon: Crown,
       popular: false,
       buttonText: 'Contact Sales',
-      buttonAction: () => window.open('mailto:sales@fusedai.com', '_blank')
+      buttonAction: () => window.open('mailto:sales@fusedai.com', '_blank'),
+      message_limit: 1000
     }
   ];
 
@@ -86,17 +92,87 @@ export default function PlansPage() {
     setIsLoading(true);
     const plan = plans.find(p => p.id === selectedPlan);
     
-    if (plan) {
-      // Simulate processing
-      setTimeout(() => {
-        setIsLoading(false);
+    try {
+      // Get token from session storage
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        window.location.href = '/login';
+        return;
+      }
+
+      if (plan) {
+        // Convert price to float
+        const priceToFloat = (price: string): number => {
+          if (price === 'Free' || price === 'Custom') return 0.0;
+          // Remove '$' and convert to float
+          return parseFloat(price.replace('$', ''));
+        };
+
+        // Prepare plan data
+        const planData = {
+          plan_name: plan.name,
+          plan_type: plan.id,
+          plan_price: priceToFloat(plan.price),
+          message_limit: plan.message_limit
+        };
+
+        // Make API call
+        const response = await fetch('http://localhost:8000/api/fusedai/plan-selection', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': `${token}`
+          },
+          body: JSON.stringify(planData)
+        });
+
+        const data = await response.json();
+
+        // Check for 401 error
+        if (response.status === 401 || (data.detail && data.detail.includes('401'))) {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Invalid token"
+          });
+          localStorage.removeItem('token');
+          window.location.href = '/login';
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(data.detail || data.message || 'Failed to select plan');
+        }
+
+        // Show success message
+        toast({
+          title: "Success",
+          description: "Plan selected successfully"
+        });
+
+        // Redirect to appropriate page based on plan
         plan.buttonAction();
-      }, 1000);
+      }
+    } catch (error) {
+      console.error('Plan selection error:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to select plan'
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
+      <Toaster />
       <Navbar />
       
 

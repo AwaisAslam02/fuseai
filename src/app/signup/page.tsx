@@ -5,12 +5,14 @@ import { motion } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, User, ArrowLeft, Check } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-
 import { FcGoogle } from 'react-icons/fc';
 import { FaApple } from 'react-icons/fa';
+import { useToast } from "@/hooks/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 
 export default function SignupPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -33,11 +35,61 @@ export default function SignupPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Add signup logic here
-    setTimeout(() => {
-      setIsLoading(false);
+
+    try {
+      // Validate passwords match
+      if (formData.password !== formData.confirmPassword) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Passwords do not match"
+        });
+        return;
+      }
+
+      // Prepare user data
+      const userData = {
+        user_name: `${formData.firstName} ${formData.lastName}`.trim(),
+        email: formData.email,
+        hashed_password: formData.password // Note: Password will be hashed by backend
+      };
+
+      // Make API call
+      const response = await fetch('http://localhost:8000/api/fusedai/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to create account');
+      }
+
+      // Store token in session storage
+      localStorage.setItem('token', data.token);
+
+      // Show success message
+      toast({
+        title: "Success",
+        description: "Account created successfully"
+      });
+
+      // Redirect to OTP verification
       router.push('/verify-otp');
-    }, 1000);
+    } catch (error) {
+      console.error('Signup error:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to create account'
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const passwordRequirements = [
@@ -49,6 +101,7 @@ export default function SignupPage() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
+      <Toaster />
       {/* Back Button */}
       <div className="absolute top-6 left-6 z-20">
         <Link href="/" className="flex items-center text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors">

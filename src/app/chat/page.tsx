@@ -4,8 +4,10 @@ import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Send, Plus, MessageSquare, ArrowLeft, Bot, User, Settings, Trash2, Paperclip, ChevronDown, LogOut, Menu, X } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useToast } from "@/hooks/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 import { ThemeToggle } from '@/components/theme-provider';
-
 
 interface Message {
   id: string;
@@ -17,9 +19,11 @@ interface Message {
 
 interface Chat {
   id: string;
+  session_id: string;
   title: string;
   messages: Message[];
   createdAt: Date;
+  updatedAt: Date;
   model: string;
 }
 
@@ -31,19 +35,29 @@ const AI_MODELS = [
   { id: 'deepseek', name: 'DeepSeek', description: 'High-performance reasoning and technical analysis', color: 'bg-purple-500' },
   { id: 'fusedai', name: 'FusedAI', description: 'Multi-model synthesis for comprehensive research', color: 'bg-indigo-500' },
 ];
-
+   
 export default function ChatPage() {
+  const router = useRouter();
+  const { toast } = useToast();
   const [chats, setChats] = useState<Chat[]>([]);
-  
   const [currentChat, setCurrentChat] = useState<Chat | null>(null);
   const [message, setMessage] = useState('');
   const [selectedModel, setSelectedModel] = useState('gemini');
   const [isLoading, setIsLoading] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(true);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
+  const [isClearingChat, setIsClearingChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load chat sessions on component mount
+  useEffect(() => {
+    loadChatSessions();
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -52,6 +66,271 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [currentChat?.messages]);
+
+  // Check authentication and load sessions
+  const loadChatSessions = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        window.location.href = '/login';
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/get-chat-sessions', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': `${token}`
+        }
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401 || (data.detail && data.detail.includes('401'))) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Failed to load chat sessions');
+      }
+
+      // Handle the response format - check if data has sessions array or is directly an array
+      let sessions = [];
+      if (Array.isArray(data)) {
+        sessions = data;
+      } else if (data.sessions && Array.isArray(data.sessions)) {
+        sessions = data.sessions;
+      } else if (data.chat_sessions && Array.isArray(data.chat_sessions)) {
+        sessions = data.chat_sessions;
+      } else {
+        console.log('Unexpected response format:', data);
+        sessions = [];
+      }
+
+      // Transform sessions to match our Chat interface
+      const transformedChats: Chat[] = sessions.map((session: any) => ({
+        id: session.session_id,
+        session_id: session.session_id,
+        title: session.chat_session_name,
+        messages: [],
+        createdAt: new Date(session.updated_at),
+        updatedAt: new Date(session.updated_at),
+        model: 'gemini'
+      }));
+
+      setChats(transformedChats);
+    } catch (error) {
+      console.error('Error loading chat sessions:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to load chat sessions'
+      });
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  };
+
+  // Create new chat session
+  const createChatSession = async (firstMessage: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        window.location.href = '/login';
+        return null;
+      }
+
+      const sessionName = firstMessage.length > 30 ? firstMessage.substring(0, 30) + '...' : firstMessage;
+
+      const response = await fetch('http://localhost:8000/api/fusedai/create-chat-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': `${token}`
+        },
+        body: JSON.stringify({
+          chat_session_name: sessionName
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401 || (data.detail && data.detail.includes('401'))) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+        return null;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Failed to create chat session');
+      }
+
+      return data.session_id;
+    } catch (error) {
+      console.error('Error creating chat session:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to create chat session'
+      });
+      return null;
+    }
+  };
+
+  // Send message to AI
+  const sendMessageToAI = async (sessionId: string, userMessage: string, model: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        window.location.href = '/login';
+        return null;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/chat-with-ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': `${token}`
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          message: userMessage,
+          model: model
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401 || (data.detail && data.detail.includes('401'))) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+        return null;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Failed to send message');
+      }
+
+      return data.ai_response;
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to send message'
+      });
+      return null;
+    }
+  };
+
+  // Load messages for existing chat
+  const loadChatMessages = async (sessionId: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        window.location.href = '/login';
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/get-chat-session-messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': `${token}`
+        },
+        body: JSON.stringify({
+          session_id: sessionId
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401 || (data.detail && data.detail.includes('401'))) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Failed to load messages');
+      }
+
+      // Transform messages to match our Message interface
+      const messages: Message[] = [];
+      data.chat_messages.forEach((msg: any, index: number) => {
+        if (msg.user_message) {
+          messages.push({
+            id: `user_${index}`,
+            content: msg.user_message,
+            role: 'user',
+            timestamp: new Date(msg.user_time),
+            model: selectedModel
+          });
+        }
+        if (msg.ai_message) {
+          messages.push({
+            id: `ai_${index}`,
+            content: msg.ai_message,
+            role: 'assistant',
+            timestamp: new Date(msg.ai_time),
+            model: selectedModel
+          });
+        }
+      });
+
+      return messages;
+    } catch (error) {
+      console.error('Error loading messages:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to load messages'
+      });
+      return [];
+    }
+  };
 
   // Close attachment menu when clicking outside
   useEffect(() => {
@@ -95,26 +374,73 @@ export default function ChatPage() {
       title: 'New Chat',
       model: selectedModel,
       createdAt: new Date(),
+      updatedAt: new Date(),
+      session_id: '', // Will be populated after first message
       messages: []
     };
     setChats([newChat, ...chats]);
     setCurrentChat(newChat);
   };
 
+  const selectChat = async (chat: Chat) => {
+    if (chat.session_id && chat.messages.length === 0) {
+      // Load messages for existing chat
+      setIsLoadingMessages(true);
+      const messages = await loadChatMessages(chat.session_id);
+      const updatedChat = {
+        ...chat,
+        messages: messages || []
+      };
+      setCurrentChat(updatedChat);
+      // Update the chat in the chats array
+      setChats(chats.map(c => c.id === chat.id ? updatedChat : c));
+      setIsLoadingMessages(false);
+    } else {
+      setCurrentChat(chat);
+    }
+  };
+
   const sendMessage = async () => {
     if (!message.trim()) return;
 
-    // If no current chat, create a new one
-    if (!currentChat) {
-      const newChat: Chat = {
-        id: Date.now().toString(),
-        title: message.length > 30 ? message.substring(0, 30) + '...' : message,
-        messages: [],
-        createdAt: new Date(),
-        model: selectedModel
-      };
-      setCurrentChat(newChat);
-      setChats([...chats, newChat]);
+    let chatToUpdate = currentChat;
+    let sessionId = currentChat?.session_id;
+
+    // If no current chat or no session_id, create a new chat session
+    if (!currentChat || !currentChat.session_id) {
+      // Create new chat session
+      sessionId = await createChatSession(message.trim());
+      if (!sessionId) {
+        return; // Error already handled in createChatSession
+      }
+
+      if (!currentChat) {
+        // Create new chat object
+        const newChat: Chat = {
+          id: Date.now().toString(),
+          session_id: sessionId,
+          title: message.length > 30 ? message.substring(0, 30) + '...' : message,
+          messages: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          model: selectedModel
+        };
+        setCurrentChat(newChat);
+        setChats([newChat, ...chats]);
+        chatToUpdate = newChat;
+      } else {
+        // Update existing chat with session_id
+        chatToUpdate = {
+          ...currentChat,
+          session_id: sessionId,
+          title: message.length > 30 ? message.substring(0, 30) + '...' : message
+        };
+        setCurrentChat(chatToUpdate);
+        setChats(chats.map(chat => chat.id === chatToUpdate!.id ? chatToUpdate! : chat));
+      }
+
+      // Reload chat sessions to get the updated list
+      await loadChatSessions();
     }
 
     const userMessage: Message = {
@@ -125,22 +451,23 @@ export default function ChatPage() {
       model: selectedModel
     };
 
-    const chatToUpdate = currentChat || chats[chats.length - 1];
     const updatedChat = {
-      ...chatToUpdate,
-      messages: [...chatToUpdate.messages, userMessage]
+      ...chatToUpdate!,
+      messages: [...chatToUpdate!.messages, userMessage]
     };
 
     setCurrentChat(updatedChat);
-    setChats(chats.map(chat => chat.id === chatToUpdate.id ? updatedChat : chat));
+    setChats(chats.map(chat => chat.id === updatedChat.id ? updatedChat : chat));
     setMessage('');
     setIsLoading(true);
 
-    // Simulate AI response
-    setTimeout(() => {
+    // Send message to AI
+    const aiResponse = await sendMessageToAI(sessionId!, message, selectedModel);
+    
+    if (aiResponse) {
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `This is a simulated response from ${AI_MODELS.find(m => m.id === selectedModel)?.name}. In a real implementation, this would be the AI's actual response to your message.`,
+        content: aiResponse,
         role: 'assistant',
         timestamp: new Date(),
         model: selectedModel
@@ -148,19 +475,156 @@ export default function ChatPage() {
 
       const finalChat = {
         ...updatedChat,
-        messages: [...updatedChat.messages, aiMessage]
+        messages: [...updatedChat.messages, aiMessage],
+        updatedAt: new Date()
       };
 
       setCurrentChat(finalChat);
-      setChats(chats.map(chat => chat.id === chatToUpdate.id ? finalChat : chat));
-      setIsLoading(false);
-    }, 1000);
+      setChats(chats.map(chat => chat.id === finalChat.id ? finalChat : chat));
+    }
+    
+    setIsLoading(false);
   };
 
-  const deleteChat = (chatId: string) => {
-    setChats(chats.filter(chat => chat.id !== chatId));
-    if (currentChat?.id === chatId) {
-      setCurrentChat(null);
+  const deleteChat = async (chatId: string) => {
+    try {
+      const chat = chats.find(c => c.id === chatId);
+      if (!chat || !chat.session_id) return;
+
+      setDeletingChatId(chatId);
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        window.location.href = '/login';
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/delete-chat-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': `${token}`
+        },
+        body: JSON.stringify({
+          session_id: chat.session_id
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401 || (data.detail && data.detail.includes('401'))) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Failed to delete chat');
+      }
+
+      // Remove chat from local state
+      setChats(chats.filter(chat => chat.id !== chatId));
+      if (currentChat?.id === chatId) {
+        setCurrentChat(null);
+      }
+
+      // Reload chat sessions
+      await loadChatSessions();
+
+      toast({
+        title: "Success",
+        description: "Chat deleted successfully"
+      });
+
+    } catch (error) {
+      console.error('Error deleting chat:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to delete chat'
+      });
+    } finally {
+      setDeletingChatId(null);
+    }
+  };
+
+  const clearChat = async () => {
+    if (!currentChat || !currentChat.session_id) return;
+    
+    try {
+      setIsClearingChat(true);
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        window.location.href = '/login';
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/clear-chat-messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': `${token}`
+        },
+        body: JSON.stringify({
+          session_id: currentChat.session_id
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401 || (data.detail && data.detail.includes('401'))) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Failed to clear chat messages');
+      }
+
+      // Clear messages from state
+      const clearedChat = {
+        ...currentChat,
+        messages: []
+      };
+      setCurrentChat(clearedChat);
+      setChats(chats.map(chat => chat.id === currentChat.id ? clearedChat : chat));
+
+      toast({
+        title: "Success",
+        description: "Chat messages cleared successfully"
+      });
+
+    } catch (error) {
+      console.error('Error clearing chat messages:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to clear chat messages'
+      });
+    } finally {
+      setIsClearingChat(false);
     }
   };
 
@@ -197,8 +661,47 @@ export default function ChatPage() {
     }
   };
 
+  const handleSignOut = () => {
+    // Clear session storage
+    localStorage.removeItem('token');
+    
+    // Show sign out message
+    toast({
+      title: "Success",
+      description: "Signed out successfully"
+    });
+
+    // Redirect to home page
+    router.push('/');
+  };
+
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
+      <Toaster />
+      
+      {/* Full Screen Loading Overlay */}
+      {isLoadingMessages && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-8 shadow-2xl">
+            <div className="flex flex-col items-center space-y-4">
+              {/* Donut Loader */}
+              <div className="relative w-16 h-16">
+                <div className="absolute inset-0 border-4 border-gray-200 dark:border-gray-600 rounded-full"></div>
+                <div className="absolute inset-0 border-4 border-transparent border-t-gray-900 dark:border-t-white rounded-full animate-spin"></div>
+              </div>
+              <div className="text-center">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                  Loading Messages
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Please wait while we fetch your conversation...
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Custom Header */}
       <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -224,10 +727,7 @@ export default function ChatPage() {
             <div className="flex items-center space-x-4">
               <ThemeToggle />
               <button
-                onClick={() => {
-                  // Add sign out logic here
-                  console.log('Sign out clicked');
-                }}
+                onClick={handleSignOut}
                 className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 rounded-md transition-colors"
               >
                 <LogOut className="w-4 h-4" />
@@ -263,9 +763,19 @@ export default function ChatPage() {
                </button>
              </div>
 
-             <div className="px-2">
-               <div className="space-y-1">
-                 {chats.map((chat) => (
+                         <div className="px-2">
+              <div className="space-y-1">
+                {isLoadingSessions ? (
+                  <div className="flex items-center justify-center py-4">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                  </div>
+                ) : chats.length === 0 ? (
+                  <div className="text-center py-4">
+                    <p className="text-sm text-gray-400">No chats yet</p>
+                    <p className="text-xs text-gray-500 mt-1">Start a new conversation</p>
+                  </div>
+                ) : (
+                  chats.map((chat) => (
                    <motion.div
                      key={chat.id}
                      initial={{ opacity: 0, x: -20 }}
@@ -275,7 +785,7 @@ export default function ChatPage() {
                          ? 'bg-gray-200 dark:bg-gray-700'
                          : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                      }`}
-                     onClick={() => setCurrentChat(chat)}
+                     onClick={() => selectChat(chat)}
                    >
                      <div className="flex items-center justify-between">
                        <div className="flex-1 min-w-0">
@@ -288,15 +798,26 @@ export default function ChatPage() {
                            e.stopPropagation();
                            deleteChat(chat.id);
                          }}
-                         className="text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                         disabled={deletingChatId === chat.id}
+                         className="text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 relative"
                        >
-                         <Trash2 className="w-3 h-3" />
-                       </button>
+                         {deletingChatId === chat.id ? (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-4 h-4 relative">
+                              <div className="absolute inset-0 border-2 border-gray-200 dark:border-gray-600 rounded-full"></div>
+                              <div className="absolute inset-0 border-2 border-transparent border-t-red-500 rounded-full animate-spin"></div>
+                            </div>
+                          </div>
+                        ) : (
+                          <Trash2 className="w-3 h-3" />
+                        )}
+                      </button>
                      </div>
-                   </motion.div>
-                 ))}
-               </div>
-             </div>
+                                      </motion.div>
+                  ))
+                )}
+              </div>
+            </div>
            </div>
          </div>
 
@@ -360,19 +881,19 @@ export default function ChatPage() {
                     </div>
                                        <div className="flex items-center space-x-4">
                       <button
-                        onClick={() => {
-                          if (currentChat) {
-                            const clearedChat = {
-                              ...currentChat,
-                              messages: []
-                            };
-                            setCurrentChat(clearedChat);
-                            setChats(chats.map(chat => chat.id === currentChat.id ? clearedChat : chat));
-                          }
-                        }}
-                        className="bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-3 py-1.5 rounded-md hover:bg-gray-800 dark:hover:bg-gray-100 text-sm font-medium transition-colors"
+                        onClick={clearChat}
+                        disabled={isClearingChat}
+                        className="bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-3 py-1.5 rounded-md hover:bg-gray-800 dark:hover:bg-gray-100 text-sm font-medium transition-colors relative disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        Clear Chat
+                        <span className={isClearingChat ? 'invisible' : ''}>Clear Chat</span>
+                        {isClearingChat && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-4 h-4 relative">
+                              <div className="absolute inset-0 border-2 border-gray-200 dark:border-gray-600 rounded-full"></div>
+                              <div className="absolute inset-0 border-2 border-transparent border-t-white dark:border-t-gray-900 rounded-full animate-spin"></div>
+                            </div>
+                          </div>
+                        )}
                       </button>
                     </div>
                  </div>

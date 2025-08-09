@@ -1,28 +1,157 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useToast } from "@/hooks/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 
 import { FcGoogle } from 'react-icons/fc';
 import { FaApple } from 'react-icons/fa';
 
 export default function LoginPage() {
+  const router = useRouter();
+  const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+
+  // Check session on component mount
+  useEffect(() => {
+    checkExistingSession();
+  }, []);
+
+  const checkExistingSession = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        setIsCheckingSession(false);
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/check-session', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': token
+        }
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Valid session - redirect based on page identifier
+        switch (data.page) {
+          case 'verify_otp':
+            router.push('/verify-otp');
+            break;
+          case 'plan_selection':
+            router.push('/plans');
+            break;
+          case 'chat_page':
+            router.push('/chat');
+            break;
+          default:
+            console.error('Unknown page identifier:', data.page);
+            setIsCheckingSession(false);
+        }
+      } else if (response.status === 401 || data.detail?.includes('401')) {
+        // Invalid session - clear storage and stay on login
+        localStorage.removeItem('token');
+        sessionStorage.removeItem('token');
+        setIsCheckingSession(false);
+      } else {
+        // Other errors - just stop checking
+        setIsCheckingSession(false);
+      }
+    } catch (error) {
+      console.error('Session check error:', error);
+      // Clear storage on error and stay on login
+      localStorage.removeItem('token');
+      setIsCheckingSession(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Add login logic here
-    setTimeout(() => setIsLoading(false), 1000);
+
+    try {
+      const response = await fetch('http://localhost:8000/api/fusedai/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          password
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Login failed');
+      }
+
+      // Store token in both storages for consistency
+      localStorage.setItem('token', data.token);
+      sessionStorage.setItem('token', data.token);
+
+      // Show success message
+      toast({
+        title: "Success",
+        description: data.message
+      });
+
+      // Handle redirection based on the page identifier
+      switch (data.page) {
+        case 'verify_otp':
+          router.push('/verify-otp');
+          break;
+        case 'plan_selection':
+          router.push('/plans');
+          break;
+        case 'chat_page':
+          router.push('/chat');
+          break;
+        default:
+          console.error('Unknown page identifier:', data.page);
+          router.push('/');
+      }
+
+    } catch (error) {
+      console.error('Login error:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to login'
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // Show loading screen while checking session
+  if (isCheckingSession) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
+      <Toaster />
       {/* Back Button */}
       <div className="absolute top-6 left-6 z-20">
         <Link href="/" className="flex items-center text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors">
@@ -182,4 +311,4 @@ export default function LoginPage() {
       </div>
     </div>
   );
-} 
+}

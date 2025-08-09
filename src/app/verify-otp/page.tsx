@@ -4,15 +4,34 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Mail, CheckCircle, Shield, Clock, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useToast } from "@/hooks/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 
 import { ThemeToggle } from '@/components/theme-provider';
 import Navbar from '@/components/navbar';
 
 export default function VerifyOTPPage() {
+  const router = useRouter();
+  const { toast } = useToast();
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [isLoading, setIsLoading] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Add useEffect for cooldown timer
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (resendCooldown > 0) {
+      timer = setInterval(() => {
+        setResendCooldown(prev => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [resendCooldown]);
 
   const handleOtpChange = (index: number, value: string) => {
     if (value.length > 1) return; // Only allow single digit
@@ -38,20 +57,139 @@ export default function VerifyOTPPage() {
     
     setIsLoading(true);
     
-    // Simulate OTP verification
-    setTimeout(() => {
+    try {
+      // Get token from session storage
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Authentication token not found. Please login again."
+        });
+        router.push('/login');
+        return;
+      }
+
+      // Make API call
+      const response = await fetch('http://localhost:8000/api/fusedai/verify-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': `${token}`
+        },
+        body: JSON.stringify({
+          otp: parseInt(otp.join(''), 10)
+        })
+      });
+
+      const data = await response.json();
+
+      // Check for both direct 401 status and error message containing 401
+      if (response.status === 401 || (data.detail && data.detail.includes('401'))) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        // Clear the token from session storage
+        localStorage.removeItem('token');
+        // Force redirect to login
+        window.location.href = '/login';
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Failed to verify OTP');
+      }
+
+      // Show success message
+      toast({
+        title: "Success",
+        description: "OTP verified successfully"
+      });
+
       setIsVerified(true);
+    } catch (error) {
+      console.error('OTP verification error:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to verify OTP'
+      });
+      setIsVerified(false);
+    } finally {
       setIsLoading(false);
-    }, 2000);
+    }
   };
 
-  const resendOTP = () => {
-    // Simulate resending OTP
-    console.log('Resending OTP...');
+  const resendOTP = async () => {
+    if (resendCooldown > 0) return;
+
+    try {
+      // Get token from session storage
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        window.location.href = '/login';
+        return;
+      }
+
+      // Make API call
+      const response = await fetch('http://localhost:8000/api/fusedai/resend-otp', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': `${token}`
+        }
+      });
+
+      const data = await response.json();
+
+      // Check for 401 error
+      if (response.status === 401 || (data.detail && data.detail.includes('401'))) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Invalid token"
+        });
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Failed to resend OTP');
+      }
+
+      // Show success message
+      toast({
+        title: "Success",
+        description: "OTP sent successfully"
+      });
+
+      // Reset OTP input fields
+      setOtp(['', '', '', '', '', '']);
+      
+      // Start cooldown timer
+      setResendCooldown(30);
+
+    } catch (error) {
+      console.error('Resend OTP error:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to resend OTP'
+      });
+    }
   };
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
+      <Toaster />
       <Navbar />
       
 
@@ -105,7 +243,11 @@ export default function VerifyOTPPage() {
                          className="relative"
                        >
                          <input
-                           ref={(el) => (inputRefs.current[index] = el)}
+                           ref={(el) => {
+                             if (el) {
+                               inputRefs.current[index] = el;
+                             }
+                           }}
                            type="text"
                            maxLength={1}
                            value={digit}
@@ -175,11 +317,14 @@ export default function VerifyOTPPage() {
                      Didn't receive the code?{' '}
                      <motion.button
                        onClick={resendOTP}
-                       whileHover={{ scale: 1.05 }}
-                       whileTap={{ scale: 0.95 }}
-                       className="text-gray-900 dark:text-white font-semibold hover:underline transition-colors"
+                       disabled={resendCooldown > 0}
+                       whileHover={resendCooldown > 0 ? {} : { scale: 1.05 }}
+                       whileTap={resendCooldown > 0 ? {} : { scale: 0.95 }}
+                       className={`text-gray-900 dark:text-white font-semibold hover:underline transition-colors ${
+                         resendCooldown > 0 ? 'opacity-50 cursor-not-allowed' : ''
+                       }`}
                      >
-                       Resend
+                       {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend'}
                      </motion.button>
                    </p>
                  </motion.div>
