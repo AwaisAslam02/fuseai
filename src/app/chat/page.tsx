@@ -50,6 +50,7 @@ export default function ChatPage() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
   const [isClearingChat, setIsClearingChat] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
@@ -200,7 +201,7 @@ export default function ChatPage() {
   };
 
   // Send message to AI
-  const sendMessageToAI = async (sessionId: string, userMessage: string, model: string) => {
+  const sendMessageToAI = async (sessionId: string, userMessage: string, model: string, file?: File) => {
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -213,17 +214,21 @@ export default function ChatPage() {
         return null;
       }
 
+      const formData = new FormData();
+      formData.append('session_id', sessionId);
+      formData.append('message', userMessage);
+      formData.append('model', model);
+      
+      if (file) {
+        formData.append('file', file);
+      }
+
       const response = await fetch('http://localhost:8000/api/fusedai/chat-with-ai', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           'token': `${token}`
         },
-        body: JSON.stringify({
-          session_id: sessionId,
-          message: userMessage,
-          model: model
-        })
+        body: formData
       });
 
       const data = await response.json();
@@ -459,10 +464,11 @@ export default function ChatPage() {
     setCurrentChat(updatedChat);
     setChats(chats.map(chat => chat.id === updatedChat.id ? updatedChat : chat));
     setMessage('');
+    setSelectedFile(null); // Clear selected file
     setIsLoading(true);
 
     // Send message to AI
-    const aiResponse = await sendMessageToAI(sessionId!, message, selectedModel);
+    const aiResponse = await sendMessageToAI(sessionId!, message, selectedModel, selectedFile || undefined);
     
     if (aiResponse) {
       const aiMessage: Message = {
@@ -631,16 +637,19 @@ export default function ChatPage() {
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files && files.length > 0) {
-      // Handle file upload logic here
-      console.log('Selected files:', files);
+      const file = files[0]; // Take the first file
+      console.log(`Selected file: ${file.name} (${file.type}) - ${(file.size / 1024).toFixed(2)} KB`);
       
-      // Show selected files in console for debugging
-      Array.from(files).forEach(file => {
-        console.log(`Selected file: ${file.name} (${file.type}) - ${(file.size / 1024).toFixed(2)} KB`);
+      // Store the selected file
+      setSelectedFile(file);
+      
+      // Show success toast
+      toast({
+        title: "File Selected",
+        description: `${file.name} is ready to send`
       });
       
-      // You can add file processing, validation, and upload logic here
-      // For now, we'll just close the menu
+      // Close the menu
       setShowAttachmentMenu(false);
       
       // Clear the input so the same file can be selected again
@@ -960,6 +969,29 @@ export default function ChatPage() {
                              {/* Input Area - ChatGPT Style */}
                <div className="p-4">
                  <div className="max-w-xl mx-auto">
+                   {/* Show selected file indicator above input */}
+                   {selectedFile && (
+                     <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                       <div className="flex items-center justify-between">
+                         <div className="flex items-center space-x-2">
+                           <Paperclip className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                           <span className="text-sm text-blue-800 dark:text-blue-200 font-medium">
+                             {selectedFile.name}
+                           </span>
+                           <span className="text-xs text-blue-600 dark:text-blue-400">
+                             ({(selectedFile.size / 1024).toFixed(1)} KB)
+                           </span>
+                         </div>
+                         <button
+                           onClick={() => setSelectedFile(null)}
+                           className="p-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded transition-colors"
+                         >
+                           <X className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                         </button>
+                       </div>
+                     </div>
+                   )}
+                   
                    <div className="relative">
                      <textarea
                        value={message}
@@ -970,8 +1002,8 @@ export default function ChatPage() {
                            sendMessage();
                          }
                        }}
-                                             placeholder="Message FusedAI..."
-                      className="w-full p-3 pr-32 border border-gray-300 dark:border-gray-600 rounded-full resize-none focus:outline-none focus:ring-2 focus:ring-gray-500 bg-black text-white"
+                       placeholder={selectedFile ? `Message FusedAI with ${selectedFile.name}...` : "Message FusedAI..."}
+                       className="w-full p-3 pr-32 border border-gray-300 dark:border-gray-600 rounded-full resize-none focus:outline-none focus:ring-2 focus:ring-gray-500 bg-black text-white"
                        rows={1}
                      />
                      
@@ -1130,6 +1162,29 @@ export default function ChatPage() {
               <div className="p-4">
                 <div className="max-w-2xl mx-auto">
                   <div className="relative">
+                    {/* Show selected file indicator above input */}
+                    {selectedFile && (
+                      <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <Paperclip className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                            <span className="text-sm text-blue-800 dark:text-blue-200 font-medium">
+                              {selectedFile.name}
+                            </span>
+                            <span className="text-xs text-blue-600 dark:text-blue-400">
+                              ({(selectedFile.size / 1024).toFixed(1)} KB)
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => setSelectedFile(null)}
+                            className="p-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded transition-colors"
+                          >
+                            <X className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    
                     <textarea
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}

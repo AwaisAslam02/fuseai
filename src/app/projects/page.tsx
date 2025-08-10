@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, 
@@ -16,24 +16,23 @@ import {
   MessageCircle,
   X,
   Minimize2,
-  Maximize2
+  Maximize2,
+  Trash2
 } from 'lucide-react';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/theme-provider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 
 interface Project {
-  id: string;
-  title: string;
-  description: string;
-  date: string;
-  company: string;
-  contact: {
-    name: string;
-    email: string;
-    phone: string;
-  };
-  status: 'active' | 'completed' | 'pending' | 'on-hold';
+  project_id: string;
+  project_name: string;
+  project_description: string;
+  project_status: 'active' | 'completed' | 'pending' | 'on-hold';
+  project_address: string;
+  project_customer_name: string;
+  project_contact: string;
 }
 
 export default function ProjectsPage() {
@@ -45,6 +44,96 @@ export default function ProjectsPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState('All Dates');
   const [companyFilter, setCompanyFilter] = useState('All Companies');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
+
+  const { toast } = useToast();
+
+  const handleDeleteProject = async (projectId: string) => {
+    try {
+      setDeletingProjectId(projectId);
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "Authentication token not found. Please log in again."
+        });
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/delete-project', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': token
+        },
+        body: JSON.stringify({
+          project_id: projectId
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setProjects(prev => prev.filter(p => p.project_id !== projectId));
+        toast({
+          title: "Success",
+          description: "Project deleted successfully"
+        });
+      } else {
+        throw new Error(data.message || 'Failed to delete project');
+      }
+    } catch (error) {
+      console.error('Error deleting project:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to delete project. Please try again."
+      });
+    } finally {
+      setDeletingProjectId(null);
+    }
+  };
+
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          setError('Authentication token not found');
+          setIsLoading(false);
+          return;
+        }
+
+        const response = await fetch('http://localhost:8000/api/fusedai/get-all-projects', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': token
+          }
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+          setProjects(data.projects);
+          setError(null);
+        } else {
+          setError(data.message || 'Failed to fetch projects');
+        }
+      } catch (err) {
+        setError('Failed to fetch projects. Please try again later.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProjects();
+  }, []);
   const [chatMessages, setChatMessages] = useState([
     {
       id: 1,
@@ -58,34 +147,7 @@ export default function ProjectsPage() {
     }
   ]);
 
-  const projects: Project[] = [
-    {
-      id: '1',
-      title: 'Install 100 Data',
-      description: 'Install 100 data drops for Acme Anchors',
-      date: '7/16/2025',
-      company: 'Acme Anchors',
-      contact: {
-        name: 'Carl Wright',
-        email: 'a_billsfan@yahoo.com',
-        phone: '9016908928'
-      },
-      status: 'active'
-    },
-    {
-      id: '2',
-      title: 'Semmes Murphy Access Control',
-      description: '6325 Humphreys Blvd ClosetID 6325-FL1 10 Doors...',
-      date: '7/23/2025',
-      company: 'Acme Anchors',
-      contact: {
-        name: 'Carl Wright',
-        email: 'a_billsfan@yahoo.com',
-        phone: '9016908928'
-      },
-      status: 'active'
-    }
-  ];
+
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -105,22 +167,15 @@ export default function ProjectsPage() {
   // Filter projects based on search term and status filter
   const filteredProjects = projects.filter((project) => {
     const matchesSearch = searchTerm === '' || 
-      project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.contact.email.toLowerCase().includes(searchTerm.toLowerCase());
+      project.project_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.project_description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.project_customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.project_contact.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesStatus = statusFilter === 'All Status' || 
-      project.status.toLowerCase() === statusFilter.toLowerCase();
+      project.project_status.toLowerCase() === statusFilter.toLowerCase();
     
-    const matchesDate = dateFilter === 'All Dates' || 
-      project.date === dateFilter;
-    
-    const matchesCompany = companyFilter === 'All Companies' || 
-      project.company === companyFilter;
-    
-    return matchesSearch && matchesStatus && matchesDate && matchesCompany;
+    return matchesSearch && matchesStatus;
   });
 
   const handleSendMessage = () => {
@@ -305,61 +360,106 @@ export default function ProjectsPage() {
 
                           {/* Projects Grid */}
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-           {filteredProjects.map((project) => (
-             <motion.div
-               key={project.id}
-               initial={{ opacity: 0, y: 20 }}
-               animate={{ opacity: 1, y: 0 }}
-               className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-all duration-200"
-             >
-                             <div className="flex items-start justify-between mb-3">
-                 <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-                   {project.title}
-                 </h3>
-                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
-                   {project.status}
-                 </span>
-               </div>
-               
-               <p className="text-gray-600 dark:text-gray-400 mb-3 text-sm">
-                 {project.description}
-               </p>
+           {isLoading ? (
+             <div className="col-span-3 flex justify-center items-center py-8">
+               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black dark:border-white"></div>
+             </div>
+           ) : error ? (
+             <div className="col-span-3 text-center py-8">
+               <p className="text-red-500 dark:text-red-400">{error}</p>
+             </div>
+           ) : filteredProjects.length === 0 ? (
+             <div className="col-span-3 text-center py-8">
+               <p className="text-gray-500 dark:text-gray-400">No projects found</p>
+             </div>
+           ) : (
+             filteredProjects.map((project) => (
+               <motion.div
+                 key={project.project_id}
+                 initial={{ opacity: 0, y: 20 }}
+                 animate={{ opacity: 1, y: 0 }}
+                 className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-all duration-200"
+               >
+                 <div className="flex items-start justify-between mb-3">
+                   <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                     {project.project_name}
+                   </h3>
+                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(project.project_status)}`}>
+                     {project.project_status}
+                   </span>
+                 </div>
+                 
+                 <p className="text-gray-600 dark:text-gray-400 mb-3 text-sm">
+                   {project.project_description}
+                 </p>
 
-                             <div className="space-y-2 mb-3">
-                 <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400">
-                   <Calendar className="w-3 h-3" />
-                   <span>{project.date}</span>
+                 <div className="space-y-2 mb-3">
+                   <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400">
+                     <Building2 className="w-3 h-3" />
+                     <span>{project.project_address}</span>
+                   </div>
+                   <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400">
+                     <User className="w-3 h-3" />
+                     <span>{project.project_customer_name}</span>
+                   </div>
+                   <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400">
+                     <Phone className="w-3 h-3" />
+                     <span>{project.project_contact}</span>
+                   </div>
                  </div>
-                 <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400">
-                   <Building2 className="w-3 h-3" />
-                   <span>{project.company}</span>
-                 </div>
-                 <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400">
-                   <User className="w-3 h-3" />
-                   <span>{project.contact.name}</span>
-                 </div>
-               </div>
 
-               <div className="space-y-1 mb-3">
-                 <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400">
-                   <Mail className="w-3 h-3" />
-                   <span className="truncate">{project.contact.email}</span>
-                 </div>
-                 <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400">
-                   <Phone className="w-3 h-3" />
-                   <span>{project.contact.phone}</span>
-                 </div>
-               </div>
-
-                             <Link href={`/projects/${project.id}`}>
-                <button className="w-full flex items-center justify-center space-x-2 bg-black dark:bg-white text-white dark:text-black px-3 py-1.5 rounded-md hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-xs font-medium">
-                  <Eye className="w-3 h-3" />
-                  <span>View Details</span>
-                </button>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
+                                 <div className="flex items-center space-x-2">
+                  <Link 
+                    href={`/projects/${project.project_id}`}
+                    onClick={() => {
+                      // Store project data in session storage
+                      sessionStorage.setItem('currentProject', JSON.stringify({
+                        id: project.project_id,
+                        title: project.project_name,
+                        status: project.project_status,
+                        description: project.project_description,
+                        company: project.project_customer_name,
+                        contact: {
+                          name: project.project_customer_name,
+                          email: project.project_contact,
+                          phone: project.project_contact
+                        },
+                        address: project.project_address,
+                        date: new Date().toLocaleDateString() // You may want to add a date field to your Project interface
+                      }));
+                    }}
+                    className="flex-1"
+                  >
+                    <button className="w-full flex items-center justify-center space-x-2 bg-black dark:bg-white text-white dark:text-black px-3 py-1.5 rounded-md hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-xs font-medium">
+                      <Eye className="w-3 h-3" />
+                      <span>View Details</span>
+                    </button>
+                  </Link>
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+                        handleDeleteProject(project.project_id);
+                      }
+                    }}
+                    disabled={deletingProjectId === project.project_id}
+                    className={`p-1.5 rounded-md transition-colors ${
+                      deletingProjectId === project.project_id
+                        ? 'cursor-not-allowed bg-gray-100 dark:bg-gray-800'
+                        : 'hover:bg-red-50 dark:hover:bg-red-900/20'
+                    }`}
+                    title={deletingProjectId === project.project_id ? "Deleting..." : "Delete Project"}
+                  >
+                    {deletingProjectId === project.project_id ? (
+                      <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4 text-red-500 dark:text-red-400" />
+                    )}
+                  </button>
+                </div>
+               </motion.div>
+             ))
+           )}
+         </div>
 
         {/* Chat Toggle Button */}
                  <button
@@ -477,6 +577,7 @@ export default function ProjectsPage() {
             </motion.div>
           )}
         </AnimatePresence>
+      <Toaster />
     </div>
   );
 } 

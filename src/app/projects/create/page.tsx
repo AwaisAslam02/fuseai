@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, X } from 'lucide-react';
 import Link from 'next/link';
@@ -40,6 +40,16 @@ interface ContactForm {
 
 
 
+interface Customer {
+  customer_id: string;
+  customer_name: string;
+}
+
+interface Contact {
+  contact_id: string;
+  contact_name: string;
+}
+
 export default function CreateProjectPage() {
   const [formData, setFormData] = useState<ProjectForm>({
     name: '',
@@ -49,6 +59,84 @@ export default function CreateProjectPage() {
     customer: '',
     primaryContact: ''
   });
+
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
+  const [customerError, setCustomerError] = useState<string | null>(null);
+
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [isLoadingContacts, setIsLoadingContacts] = useState(true);
+  const [contactError, setContactError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          setCustomerError('Authentication token not found');
+          setIsLoadingCustomers(false);
+          return;
+        }
+
+        const response = await fetch('http://localhost:8000/api/fusedai/get-all-customers', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': token
+          }
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+          setCustomers(data.customers);
+          setCustomerError(null);
+        } else {
+          setCustomerError(data.message || 'Failed to fetch customers');
+        }
+      } catch (err) {
+        setCustomerError('Failed to fetch customers. Please try again later.');
+      } finally {
+        setIsLoadingCustomers(false);
+      }
+    };
+
+    fetchCustomers();
+
+    const fetchContacts = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          setContactError('Authentication token not found');
+          setIsLoadingContacts(false);
+          return;
+        }
+
+        const response = await fetch('http://localhost:8000/api/fusedai/get-all-contacts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': token
+          }
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+          setContacts(data.contacts);
+          setContactError(null);
+        } else {
+          setContactError(data.message || 'Failed to fetch contacts');
+        }
+      } catch (err) {
+        setContactError('Failed to fetch contacts. Please try again later.');
+      } finally {
+        setIsLoadingContacts(false);
+      }
+    };
+
+    fetchContacts();
+  }, []);
 
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
@@ -88,42 +176,169 @@ export default function CreateProjectPage() {
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Creating project:', formData);
-    // Add your project creation logic here
+    
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('Authentication token not found');
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/create-project', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': token
+        },
+        body: JSON.stringify({
+          project_name: formData.name,
+          project_description: formData.description,
+          project_status: formData.status.toLowerCase(),
+          project_address: formData.address,
+          project_customer_name: formData.customer,
+          project_contact: formData.primaryContact
+        })
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        alert('Project created successfully!');
+        // Reset form
+        setFormData({
+          name: '',
+          status: 'Active',
+          address: '',
+          description: '',
+          customer: '',
+          primaryContact: ''
+        });
+      } else {
+        alert(data.message || 'Failed to create project');
+      }
+    } catch (err) {
+      alert('Failed to create project. Please try again later.');
+    }
   };
 
-  const handleCreateCustomer = (e: React.FormEvent) => {
+  const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Creating customer:', customerForm);
-    // Add customer creation logic here
-    setShowCustomerModal(false);
-    setCustomerForm({
-      companyName: '',
-      industry: '',
-      website: '',
-      address: ''
-    });
-    // Show success toast
-    alert('Customer created successfully!');
+    
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('Authentication token not found');
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/create-customer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': token
+        },
+        body: JSON.stringify({
+          company_name: customerForm.companyName,
+          industry: customerForm.industry,
+          website: customerForm.website,
+          address: customerForm.address
+        })
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        alert('Customer created successfully!');
+        // Reset form
+        setCustomerForm({
+          companyName: '',
+          industry: '',
+          website: '',
+          address: ''
+        });
+        // Close modal
+        setShowCustomerModal(false);
+        // Refresh customers list
+        const customersResponse = await fetch('http://localhost:8000/api/fusedai/get-all-customers', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': token
+          }
+        });
+        const customersData = await customersResponse.json();
+        if (customersResponse.ok) {
+          setCustomers(customersData.customers);
+        }
+      } else {
+        alert(data.message || 'Failed to create customer');
+      }
+    } catch (err) {
+      alert('Failed to create customer. Please try again later.');
+    }
   };
 
-  const handleCreateContact = (e: React.FormEvent) => {
+  const handleCreateContact = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Creating contact:', contactForm);
-    // Add contact creation logic here
-    setShowContactModal(false);
-    setContactForm({
-      firstName: '',
-      lastName: '',
-      customer: '',
-      title: '',
-      email: '',
-      phone: ''
-    });
-    // Show success toast
-    alert('Contact created successfully!');
+    
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('Authentication token not found');
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/create-contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': token
+        },
+        body: JSON.stringify({
+          first_name: contactForm.firstName,
+          last_name: contactForm.lastName,
+          customer_name: contactForm.customer,
+          title: contactForm.title,
+          email: contactForm.email,
+          phone: contactForm.phone
+        })
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        alert('Contact created successfully!');
+        // Reset form
+        setContactForm({
+          firstName: '',
+          lastName: '',
+          customer: '',
+          title: '',
+          email: '',
+          phone: ''
+        });
+        // Close modal
+        setShowContactModal(false);
+        // Refresh contacts list
+        const contactsResponse = await fetch('http://localhost:8000/api/fusedai/get-all-contacts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': token
+          }
+        });
+        const contactsData = await contactsResponse.json();
+        if (contactsResponse.ok) {
+          setContacts(contactsData.contacts);
+        }
+      } else {
+        alert(data.message || 'Failed to create contact');
+      }
+    } catch (err) {
+      alert('Failed to create contact. Please try again later.');
+    }
   };
 
   return (
@@ -269,16 +484,26 @@ export default function CreateProjectPage() {
                </label>
                <div className="flex space-x-2">
                  <div className="flex-1">
-                   <Select value={formData.customer} onValueChange={(value) => handleInputChange('customer', value)}>
-                     <SelectTrigger className="w-full">
-                       <SelectValue placeholder="Select customer" />
-                     </SelectTrigger>
-                     <SelectContent>
-                       <SelectItem value="Test Company Customer">Test Company Customer</SelectItem>
-                       <SelectItem value="Acme Corporation">Acme Corporation</SelectItem>
-                       <SelectItem value="Global Industries">Global Industries</SelectItem>
-                     </SelectContent>
-                   </Select>
+                                     <Select 
+                    value={formData.customer} 
+                    onValueChange={(value) => handleInputChange('customer', value)}
+                    disabled={isLoadingCustomers}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={isLoadingCustomers ? "Loading..." : "Select customer"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customerError ? (
+                        <SelectItem value="_error" disabled>{customerError}</SelectItem>
+                      ) : customers.length === 0 ? (
+                        <SelectItem value="_empty" disabled>No customers found</SelectItem>
+                      ) : customers.map((customer) => (
+                        <SelectItem key={customer.customer_id} value={customer.customer_name}>
+                          {customer.customer_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                  </div>
                  <button
                    type="button"
@@ -302,16 +527,26 @@ export default function CreateProjectPage() {
                </label>
                <div className="flex space-x-2">
                  <div className="flex-1">
-                   <Select value={formData.primaryContact} onValueChange={(value) => handleInputChange('primaryContact', value)}>
-                     <SelectTrigger className="w-full">
-                       <SelectValue placeholder="Select contact" />
-                     </SelectTrigger>
-                     <SelectContent>
-                       <SelectItem value="John Doe">John Doe</SelectItem>
-                       <SelectItem value="Jane Smith">Jane Smith</SelectItem>
-                       <SelectItem value="Mike Johnson">Mike Johnson</SelectItem>
-                     </SelectContent>
-                   </Select>
+                                     <Select 
+                    value={formData.primaryContact} 
+                    onValueChange={(value) => handleInputChange('primaryContact', value)}
+                    disabled={isLoadingContacts}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={isLoadingContacts ? "Loading..." : "Select contact"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {contactError ? (
+                        <SelectItem value="_error" disabled>{contactError}</SelectItem>
+                      ) : contacts.length === 0 ? (
+                        <SelectItem value="_empty" disabled>No contacts found</SelectItem>
+                      ) : contacts.map((contact) => (
+                        <SelectItem key={contact.contact_id} value={contact.contact_name}>
+                          {contact.contact_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                  </div>
                  <button
                    type="button"
@@ -524,14 +759,24 @@ export default function CreateProjectPage() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Customer *
                   </label>
-                  <Select value={contactForm.customer} onValueChange={(value) => handleContactInputChange('customer', value)}>
+                  <Select 
+                    value={contactForm.customer} 
+                    onValueChange={(value) => handleContactInputChange('customer', value)}
+                    disabled={isLoadingCustomers}
+                  >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select customer" />
+                      <SelectValue placeholder={isLoadingCustomers ? "Loading..." : "Select customer"} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Test Company Customer">Test Company Customer</SelectItem>
-                      <SelectItem value="Acme Corporation">Acme Corporation</SelectItem>
-                      <SelectItem value="Global Industries">Global Industries</SelectItem>
+                      {customerError ? (
+                        <SelectItem value="_error" disabled>{customerError}</SelectItem>
+                      ) : customers.length === 0 ? (
+                        <SelectItem value="_empty" disabled>No customers found</SelectItem>
+                      ) : customers.map((customer) => (
+                        <SelectItem key={customer.customer_id} value={customer.customer_name}>
+                          {customer.customer_name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

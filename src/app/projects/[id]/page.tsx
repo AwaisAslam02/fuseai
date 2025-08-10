@@ -35,6 +35,8 @@ import {
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/theme-provider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 
 interface Message {
   id: number;
@@ -65,7 +67,17 @@ interface Document {
   uploadedBy: string;
   uploadedAt: string;
   category: 'contract' | 'blueprint' | 'invoice' | 'report' | 'other';
+  url: string;
 }
+
+const getCategoryFromType = (fileType: string): Document['category'] => {
+  const type = fileType.toLowerCase();
+  if (type.includes('contract')) return 'contract';
+  if (type.includes('blueprint') || type.includes('drawing')) return 'blueprint';
+  if (type.includes('invoice')) return 'invoice';
+  if (type.includes('report')) return 'report';
+  return 'other';
+};
 
 export default function ProjectChatPage({ params }: { params: { id: string } }) {
   const [messages, setMessages] = useState<Message[]>([
@@ -91,78 +103,92 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Mock project data - in real app, this would come from API based on params.id
-  const project: Project = {
-    id: params.id,
-    title: 'Acme Iron',
-    status: 'active',
-    description: 'Install 100 data drops for Acme Anchors',
-    company: 'Acme Anchors',
-    contact: {
-      name: 'Carl Wright',
-      email: 'a_billsfan@yahoo.com',
-      phone: '9016908928'
-    },
-    date: '7/16/2025'
-  };
-
-  // Mock documents data
-  const [documents, setDocuments] = useState<Document[]>([
-    {
-      id: '1',
-      name: 'Project Contract - Acme Iron.pdf',
-      type: 'pdf',
-      size: '2.4 MB',
-      uploadedBy: 'Carl Wright',
-      uploadedAt: '2025-01-15',
-      category: 'contract'
-    },
-    {
-      id: '2',
-      name: 'Site Blueprint - Floor Plan.dwg',
-      type: 'document',
-      size: '5.8 MB',
-      uploadedBy: 'John Doe',
-      uploadedAt: '2025-01-20',
-      category: 'blueprint'
-    },
-    {
-      id: '3',
-      name: 'Material Cost Estimate.xlsx',
-      type: 'spreadsheet',
-      size: '1.2 MB',
-      uploadedBy: 'Sarah Johnson',
-      uploadedAt: '2025-02-01',
-      category: 'report'
-    },
-    {
-      id: '4',
-      name: 'Installation Photos.zip',
-      type: 'other',
-      size: '15.6 MB',
-      uploadedBy: 'Mike Wilson',
-      uploadedAt: '2025-02-10',
-      category: 'other'
-    },
-    {
-      id: '5',
-      name: 'Progress Report Week 1.pdf',
-      type: 'pdf',
-      size: '890 KB',
-      uploadedBy: 'Carl Wright',
-      uploadedAt: '2025-02-15',
-      category: 'report'
-    },
-    {
-      id: '6',
-      name: 'Invoice INV-2025-001.pdf',
-      type: 'pdf',
-      size: '245 KB',
-      uploadedBy: 'Finance Team',
-      uploadedAt: '2025-02-20',
-      category: 'invoice'
+  // Load project data from session storage or use default values
+  const [project, setProject] = useState<Project>(() => {
+    if (typeof window !== 'undefined') {
+      const storedProject = sessionStorage.getItem('currentProject');
+      if (storedProject) {
+        return JSON.parse(storedProject);
+      }
     }
-  ]);
+    return {
+    id: params.id,
+      title: 'Loading...',
+      status: 'pending',
+      description: 'Loading project details...',
+      company: '',
+    contact: {
+        name: '',
+        email: '',
+        phone: ''
+      },
+      date: ''
+    };
+  });
+
+  interface BackendDocument {
+    document_id: string;
+    document_name: string;
+    document_type: string;
+    document_size: string;
+    document_url: string;
+  }
+
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [isDocumentsLoading, setIsDocumentsLoading] = useState(true);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+
+  // Fetch documents from backend
+  useEffect(() => {
+    const fetchDocuments = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          setDocumentsError('Authentication token not found');
+          setIsDocumentsLoading(false);
+          return;
+        }
+
+        const response = await fetch('http://localhost:8000/api/fusedai/get-all-documents', {
+          method: 'POST',  // Changed to POST to send body
+          headers: {
+            'Content-Type': 'application/json',
+            'token': token
+          },
+          body: JSON.stringify({
+            project_id: params.id
+          })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+          // Transform backend documents to our Document interface
+          const transformedDocs = data.documents.map((doc: BackendDocument) => ({
+            id: doc.document_id,
+            name: doc.document_name,
+            type: getFileType(doc.document_name),
+            size: doc.document_size,
+            uploadedBy: 'You',
+            uploadedAt: new Date().toISOString().split('T')[0],
+            category: getCategoryFromType(doc.document_type),
+            url: doc.document_url
+          }));
+          setDocuments(transformedDocs);
+          setDocumentsError(null);
+        } else {
+          throw new Error(data.message || 'Failed to fetch documents');
+        }
+      } catch (err) {
+        setDocumentsError('Failed to fetch documents. Please try again later.');
+        console.error('Error fetching documents:', err);
+      } finally {
+        setIsDocumentsLoading(false);
+      }
+    };
+
+    fetchDocuments();
+  }, []);
 
   const sidebarSections = [
     { name: 'Project Chat', icon: MessageCircle, active: true },
@@ -170,8 +196,7 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
     { name: 'Documents', icon: FileText },
     { name: 'Quotes', icon: Quote },
     { name: 'AI Estimation', icon: Brain },
-    { name: 'Bill of Materials', icon: Package },
-    { name: 'Upload', icon: Upload }
+    { name: 'Bill of Materials', icon: Package }
   ];
 
      const getStatusColor = (status: string) => {
@@ -230,23 +255,80 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
     return matchesSearch && matchesFilter;
   });
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
-    if (files) {
-      // In real app, you would upload files to server
-      Array.from(files).forEach((file) => {
-        const newDoc: Document = {
-          id: Date.now().toString(),
-          name: file.name,
-          type: getFileType(file.name),
-          size: formatFileSize(file.size),
-          uploadedBy: 'You',
-          uploadedAt: new Date().toISOString().split('T')[0],
-          category: 'other'
-        };
-        setDocuments(prev => [newDoc, ...prev]);
-      });
+    if (!files) return;
+
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB in bytes
+
+    for (const file of Array.from(files)) {
+      if (file.size > MAX_FILE_SIZE) {
+        toast({
+          variant: "destructive",
+          title: "File Too Large",
+          description: `File ${file.name} is too large. Maximum size is 50MB.`
+        });
+        continue;
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('project_id', params.id);  // Adding project_id to FormData
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+          toast({
+            variant: "destructive",
+            title: "Authentication Error",
+            description: "Authentication token not found. Please log in again."
+          });
+          return;
+        }
+
+        const response = await fetch('http://localhost:8000/api/fusedai/upload-any-file', {
+          method: 'POST',
+          headers: {
+            'token': token
+          },
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // Add the file to the documents list using the document_id from API response
+          const newDoc: Document = {
+            id: data.document_id || Date.now().toString(), // Use document_id from API response
+            name: file.name,
+            type: getFileType(file.name),
+            size: formatFileSize(file.size),
+            uploadedBy: 'You',
+            uploadedAt: new Date().toISOString().split('T')[0],
+            category: 'other',
+            url: data.url || '' // Backend should return the S3 URL
+          };
+          setDocuments(prev => [newDoc, ...prev]);
+          
+          toast({
+            title: "Success",
+            description: `File ${file.name} uploaded successfully!`
+          });
+        } else {
+          throw new Error(data.message || 'Failed to upload file');
+        }
+      } catch (error) {
+        console.error('Error uploading file:', error);
+        toast({
+          variant: "destructive",
+          title: "Upload Error",
+          description: `Failed to upload ${file.name}. Please try again.`
+        });
+      }
     }
+    
+    // Reset the file input
+    event.target.value = '';
     setIsUploadModalOpen(false);
   };
 
@@ -281,8 +363,56 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const handleDeleteDocument = (docId: string) => {
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+
+  const { toast } = useToast();
+
+  const handleDeleteDocument = async (docId: string) => {
+    try {
+      setDeletingDocId(docId);
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "Authentication token not found. Please log in again."
+        });
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/delete-document', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': token
+        },
+        body: JSON.stringify({
+          document_id: docId
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
     setDocuments(prev => prev.filter(doc => doc.id !== docId));
+        toast({
+          title: "Success",
+          description: "Document deleted successfully",
+        });
+      } else {
+        throw new Error(data.message || 'Failed to delete document');
+      }
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to delete document. Please try again."
+      });
+    } finally {
+      setDeletingDocId(null);
+    }
   };
 
   const scrollToBottom = () => {
@@ -308,24 +438,73 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = input;
     setInput('');
     setIsLoading(true);
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiMessage: Message = {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "Authentication token not found. Please log in again."
+        });
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/chat-with-document', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': token
+        },
+        body: JSON.stringify({
+          project_id: params.id,
+          message: currentInput
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        const aiMessage: Message = {
+          id: messages.length + 2,
+          role: 'assistant',
+          content: data.ai_response,
+          timestamp: new Date().toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit',
+            hour12: true 
+          })
+        };
+        setMessages(prev => [...prev, aiMessage]);
+      } else {
+        throw new Error(data.message || 'Failed to get AI response');
+      }
+    } catch (error) {
+      console.error('Error getting AI response:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to get AI response'
+      });
+      
+      // Add error message to chat
+      const errorMessage: Message = {
         id: messages.length + 2,
         role: 'assistant',
-        content: `I understand you're asking about "${input}". Let me help you with information about the ${project.title} project. What specific details would you like to know?`,
+        content: 'Sorry, I encountered an error while processing your request. Please try again.',
         timestamp: new Date().toLocaleTimeString('en-US', { 
           hour: 'numeric', 
           minute: '2-digit',
           hour12: true 
         })
       };
-      setMessages(prev => [...prev, aiMessage]);
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -366,10 +545,13 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                  </span>
                </div>
                
-               <button className="w-full flex items-center justify-center space-x-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
+               <Link 
+                 href={`/projects/${params.id}/edit`}
+                 className="w-full flex items-center justify-center space-x-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+               >
                  <Edit3 className="w-3 h-3" />
                  <span>Edit Project</span>
-               </button>
+               </Link>
              </div>
            )}
         </div>
@@ -719,26 +901,33 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                       {project.status}
                     </span>
                   </div>
+                  {project.date && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Due Date</label>
                     <p className="text-gray-900 dark:text-white">{project.date}</p>
                   </div>
+                  )}
+                  {project.company && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Company</label>
                     <p className="text-gray-900 dark:text-white">{project.company}</p>
                   </div>
+                  )}
                 </div>
               </div>
 
               {/* Description */}
+              {project.description && (
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Description</h2>
                 <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
                   {project.description}
                 </p>
               </div>
+              )}
 
               {/* Primary Contact */}
+              {project.contact && (project.contact.name || project.contact.email || project.contact.phone) && (
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Primary Contact</h2>
                 <div className="flex items-start space-x-4">
@@ -746,96 +935,76 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                     <User className="w-6 h-6 text-gray-600 dark:text-gray-400" />
                   </div>
                   <div className="flex-1">
+                      {project.contact.name && (
                     <h3 className="text-base font-medium text-gray-900 dark:text-white mb-2">{project.contact.name}</h3>
+                      )}
                     <div className="space-y-1">
+                        {project.contact.email && (
                       <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
                         <Mail className="w-4 h-4" />
-                        <a href={`mailto:${project.contact.email}`} className="hover:text-gray-900 dark:hover:text-white transition-colors">
+                            <a href={`mailto:${project.contact.email}?subject=Regarding Project: ${project.title}&body=Hello ${project.contact.name},%0D%0A%0D%0AI am writing regarding the project: ${project.title}.%0D%0A%0D%0ABest regards`} 
+                               className="hover:text-gray-900 dark:hover:text-white transition-colors">
                           {project.contact.email}
                         </a>
                       </div>
+                        )}
+                        {project.contact.phone && (
                       <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
                         <Phone className="w-4 h-4" />
                         <a href={`tel:${project.contact.phone}`} className="hover:text-gray-900 dark:hover:text-white transition-colors">
                           {project.contact.phone}
                         </a>
                       </div>
+                        )}
                     </div>
                   </div>
                 </div>
               </div>
-
-              {/* Customer Information */}
-              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Customer Information</h2>
-                <div className="flex items-start space-x-4">
-                  <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
-                    <Building2 className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-base font-medium text-gray-900 dark:text-white mb-2">{project.company}</h3>
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
-                        <Eye className="w-4 h-4" />
-                        <span>Technology Industry</span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
-                        <Calendar className="w-4 h-4" />
-                        <span>Client since 2023</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Project Timeline */}
-              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Project Timeline</h2>
-                <div className="space-y-4">
-                  <div className="flex items-start space-x-3">
-                    <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">Project Started</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">January 15, 2025</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">Planning Phase Complete</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">February 1, 2025</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <div className="w-2 h-2 bg-yellow-500 rounded-full mt-2"></div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">Implementation In Progress</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Current Phase</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <div className="w-2 h-2 bg-gray-300 dark:bg-gray-600 rounded-full mt-2"></div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">Expected Completion</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">{project.date}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              )}
 
               {/* Quick Actions */}
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Actions</h2>
                 <div className="flex flex-wrap gap-3">
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-md hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-sm">
-                    <Edit3 className="w-4 h-4" />
-                    <span>Edit Project</span>
-                  </button>
-                  <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm">
+                  {project.contact.email && (
+                    <a 
+                      href={`mailto:${project.contact.email}?subject=Regarding Project: ${project.title}&body=Hello ${project.contact.name},%0D%0A%0D%0AI am writing regarding the project: ${project.title}.%0D%0A%0D%0ABest regards`}
+                      className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+                    >
                     <Mail className="w-4 h-4" />
                     <span>Contact Client</span>
-                  </button>
-                  <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm">
+                    </a>
+                  )}
+                  <button 
+                    onClick={() => {
+                      // Generate PDF content
+                      const content = `
+                        Project Report
+                        
+                        Project Name: ${project.title}
+                        Status: ${project.status}
+                        ${project.date ? `Due Date: ${project.date}` : ''}
+                        ${project.company ? `Company: ${project.company}` : ''}
+                        ${project.description ? `\nDescription: ${project.description}` : ''}
+                        
+                        ${project.contact.name ? `\nContact Information:\nName: ${project.contact.name}` : ''}
+                        ${project.contact.email ? `Email: ${project.contact.email}` : ''}
+                        ${project.contact.phone ? `Phone: ${project.contact.phone}` : ''}
+                      `;
+                      
+                      // Create Blob and download
+                      const blob = new Blob([content], { type: 'application/pdf' });
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${project.title} Report.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+                    }}
+                    className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+                  >
                     <FileText className="w-4 h-4" />
                     <span>Generate Report</span>
                   </button>
@@ -875,6 +1044,7 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                     </SelectContent>
                   </Select>
                   
+                  <div className="flex flex-col items-end gap-2">
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     className="flex items-center space-x-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors font-medium"
@@ -882,6 +1052,8 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                     <Upload className="w-4 h-4" />
                     <span>Upload Files</span>
                   </button>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Maximum file size: 50MB</p>
+                  </div>
                   
                   <input
                     ref={fileInputRef}
@@ -889,7 +1061,8 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                     multiple
                     onChange={handleFileUpload}
                     className="hidden"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.zip,.dwg,.txt,.csv"
+                    accept="*/*"
+                    title="Select files (max 50MB each)"
                   />
                 </div>
               </div>
@@ -901,7 +1074,9 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                     <FileText className="w-5 h-5 text-blue-500" />
                     <div>
                       <p className="text-sm text-gray-600 dark:text-gray-400">Total Documents</p>
-                      <p className="text-xl font-semibold text-gray-900 dark:text-white">{documents.length}</p>
+                      <p className="text-xl font-semibold text-gray-900 dark:text-white">
+                        {isDocumentsLoading ? '-' : documents.length}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -910,9 +1085,21 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                   <div className="flex items-center space-x-2">
                     <FileText className="w-5 h-5 text-red-500" />
                     <div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">PDF Files</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Documents</p>
                       <p className="text-xl font-semibold text-gray-900 dark:text-white">
-                        {documents.filter(doc => doc.type === 'pdf').length}
+                        {isDocumentsLoading ? '-' : documents.filter(doc => doc.type === 'document' || doc.type === 'pdf').length}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                  <div className="flex items-center space-x-2">
+                    <Image className="w-5 h-5 text-blue-500" />
+                    <div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Images</p>
+                      <p className="text-xl font-semibold text-gray-900 dark:text-white">
+                        {isDocumentsLoading ? '-' : documents.filter(doc => doc.type === 'image').length}
                       </p>
                     </div>
                   </div>
@@ -922,20 +1109,10 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                   <div className="flex items-center space-x-2">
                     <FileSpreadsheet className="w-5 h-5 text-green-500" />
                     <div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Spreadsheets</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Other Files</p>
                       <p className="text-xl font-semibold text-gray-900 dark:text-white">
-                        {documents.filter(doc => doc.type === 'spreadsheet').length}
+                        {isDocumentsLoading ? '-' : documents.filter(doc => doc.type === 'other' || doc.type === 'spreadsheet').length}
                       </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                  <div className="flex items-center space-x-2">
-                    <Upload className="w-5 h-5 text-purple-500" />
-                    <div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">This Month</p>
-                      <p className="text-xl font-semibold text-gray-900 dark:text-white">3</p>
                     </div>
                   </div>
                 </div>
@@ -982,20 +1159,32 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                             </div>
                             
                             <div className="flex items-center space-x-2 ml-4">
-                              <button
-                                onClick={() => {/* Handle download */}}
+                              <a
+                                href={document.url}
+                                download={document.name}
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                                 title="Download"
                               >
                                 <Download className="w-4 h-4" />
-                              </button>
+                              </a>
                               
                               <button
                                 onClick={() => handleDeleteDocument(document.id)}
-                                className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                                title="Delete"
+                                disabled={deletingDocId === document.id}
+                                className={`p-2 text-gray-400 transition-colors ${
+                                  deletingDocId === document.id 
+                                    ? 'cursor-not-allowed opacity-50' 
+                                    : 'hover:text-red-600 dark:hover:text-red-400'
+                                }`}
+                                title={deletingDocId === document.id ? "Deleting..." : "Delete"}
                               >
+                                {deletingDocId === document.id ? (
+                                  <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                                ) : (
                                 <Trash2 className="w-4 h-4" />
+                                )}
                               </button>
                             </div>
                           </div>
@@ -1050,6 +1239,7 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
           </div>
         )}
       </div>
+      <Toaster />
     </div>
   );
 }

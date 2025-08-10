@@ -30,16 +30,35 @@ interface CustomerInfo {
 
 export default function QuotesPage() {
   const [activeTab, setActiveTab] = useState('Customer Setup');
-  const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({
-    companyName: 'Acme Anchors',
-    projectName: 'Semmes Murphy Access Control upgrade',
-    contactName: 'Carl Wright',
-    email: 'a_billsfan@yahoo.com',
-    phone: '9016908928',
-    address: '555 Fishnet lane',
-    city: 'Memphis',
-    state: 'MS',
-    zip: '38632'
+  const [customerInfo, setCustomerInfo] = useState<CustomerInfo>(() => {
+    if (typeof window !== 'undefined') {
+      const storedProject = sessionStorage.getItem('currentProject');
+      if (storedProject) {
+        const projectData = JSON.parse(storedProject);
+        return {
+          companyName: projectData.company,
+          projectName: projectData.title,
+          contactName: projectData.contact.name,
+          email: projectData.contact.email,
+          phone: projectData.contact.phone,
+          address: projectData.address || '',
+          city: 'Memphis', // Default values for fields not in project data
+          state: 'MS',
+          zip: '38632'
+        };
+      }
+    }
+    return {
+      companyName: '',
+      projectName: '',
+      contactName: '',
+      email: '',
+      phone: '',
+      address: '',
+      city: '',
+      state: '',
+      zip: ''
+    };
   });
 
   const tabs = [
