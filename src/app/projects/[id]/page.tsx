@@ -45,6 +45,15 @@ interface Message {
   timestamp: string;
 }
 
+interface BackendMessage {
+  message_id: number;
+  user_message: string;
+  ai_message: string;
+  user_message_time: string;
+  ai_message_time: string;
+  inserted_at: string;
+}
+
 interface Project {
   id: string;
   title: string;
@@ -80,20 +89,11 @@ const getCategoryFromType = (fileType: string): Document['category'] => {
 };
 
 export default function ProjectChatPage({ params }: { params: { id: string } }) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      role: 'assistant',
-      content: 'Hello! I\'m here to help you with this project. What would you like to know?',
-      timestamp: new Date().toLocaleTimeString('en-US', { 
-        hour: 'numeric', 
-        minute: '2-digit',
-        hour12: true 
-      })
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState('Project Chat');
   const [activeQuoteTab, setActiveQuoteTab] = useState('Customer Setup');
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(true);
@@ -189,6 +189,113 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
 
     fetchDocuments();
   }, []);
+
+  // Fetch project messages from backend
+  useEffect(() => {
+    const fetchProjectMessages = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          setError('Authentication token not found');
+          setIsLoadingMessages(false);
+          return;
+        }
+
+        const response = await fetch('http://localhost:8000/api/fusedai/get-project-messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': token
+          },
+          body: JSON.stringify({
+            project_id: parseInt(params.id)
+          })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+          // Transform backend messages to our Message interface
+          const transformedMessages: Message[] = [];
+          
+          data.messages.forEach((msg: BackendMessage) => {
+            // Add user message
+            if (msg.user_message) {
+              transformedMessages.push({
+                id: msg.message_id * 2 - 1, // Ensure unique IDs
+                role: 'user',
+                content: msg.user_message,
+                timestamp: new Date(msg.user_message_time).toLocaleTimeString('en-US', { 
+                  hour: 'numeric', 
+                  minute: '2-digit',
+                  hour12: true 
+                })
+              });
+            }
+            
+            // Add AI message
+            if (msg.ai_message) {
+              transformedMessages.push({
+                id: msg.message_id * 2, // Ensure unique IDs
+                role: 'assistant',
+                content: msg.ai_message,
+                timestamp: new Date(msg.ai_message_time).toLocaleTimeString('en-US', { 
+                  hour: 'numeric', 
+                  minute: '2-digit',
+                  hour12: true 
+                })
+              });
+            }
+          });
+          
+          // If no messages from backend, add default welcome message
+          if (transformedMessages.length === 0) {
+            transformedMessages.push({
+              id: 1,
+              role: 'assistant',
+              content: 'Hello! I\'m here to help you with this project. What would you like to know?',
+              timestamp: new Date().toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit',
+                hour12: true 
+              })
+            });
+          }
+          
+          setMessages(transformedMessages);
+        } else {
+          // If API fails, add default welcome message
+          setMessages([{
+            id: 1,
+            role: 'assistant',
+            content: 'Hello! I\'m here to help you with this project. What would you like to know?',
+            timestamp: new Date().toLocaleTimeString('en-US', { 
+              hour: 'numeric', 
+              minute: '2-digit',
+              hour12: true 
+            })
+          }]);
+        }
+      } catch (err) {
+        console.error('Error fetching project messages:', err);
+        // Add default welcome message on error
+        setMessages([{
+          id: 1,
+          role: 'assistant',
+          content: 'Hello! I\'m here to help you with this project. What would you like to know?',
+          timestamp: new Date().toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit',
+            hour12: true 
+          })
+        }]);
+      } finally {
+        setIsLoadingMessages(false);
+      }
+    };
+
+    fetchProjectMessages();
+  }, [params.id]);
 
   const sidebarSections = [
     { name: 'Project Chat', icon: MessageCircle, active: true },
@@ -613,7 +720,15 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
           <div className="flex-1 flex flex-col">
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {messages.map((message) => (
+              {isLoadingMessages ? (
+                <div className="flex justify-center items-center h-64">
+                  <div className="flex flex-col items-center space-y-4">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black dark:border-white"></div>
+                    <p className="text-gray-500 dark:text-gray-400">Loading project messages...</p>
+                  </div>
+                </div>
+              ) : (
+                messages.map((message) => (
                 <motion.div
                   key={message.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -643,7 +758,8 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                     )}
                   </div>
                 </motion.div>
-              ))}
+                ))
+              )}
               
               {isLoading && (
                 <div className="flex justify-start">
