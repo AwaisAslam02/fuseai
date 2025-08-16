@@ -30,7 +30,8 @@ import {
   FileSpreadsheet,
   Search,
   Filter,
-  Plus
+  Plus,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/theme-provider';
@@ -79,6 +80,32 @@ interface Document {
   url: string;
 }
 
+interface BOMItem {
+  id: string;
+  description: string;
+  category: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  vendor: string;
+  partNumber: string;
+  manufacturer: string;
+  modelNumber: string;
+  notes: string;
+  totalCost: number;
+  totalSell: number;
+  margin: number;
+}
+
+interface BOMCategory {
+  id: string;
+  name: string;
+  itemCount: number;
+  totalCost: number;
+  totalSell: number;
+  percentageOfTotal: number;
+}
+
 const getCategoryFromType = (fileType: string): Document['category'] => {
   const type = fileType.toLowerCase();
   if (type.includes('contract')) return 'contract';
@@ -102,6 +129,27 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // BOM States
+  const [bomItems, setBomItems] = useState<BOMItem[]>([]);
+  const [bomCategories, setBomCategories] = useState<BOMCategory[]>([]);
+  const [activeBOMTab, setActiveBOMTab] = useState('BOM Items');
+  const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
+  const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newItem, setNewItem] = useState<Partial<BOMItem>>({
+    description: '',
+    category: '',
+    quantity: 1,
+    unit: 'Each',
+    unitPrice: 0,
+    vendor: '',
+    partNumber: '',
+    manufacturer: '',
+    modelNumber: '',
+    notes: '',
+    margin: 35
+  });
 
   // Load project data from session storage or use default values
   const [project, setProject] = useState<Project>(() => {
@@ -473,6 +521,183 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
 
   const { toast } = useToast();
+
+  // BOM Helper Functions
+  const calculateItemTotals = (item: Partial<BOMItem>): { totalCost: number; totalSell: number } => {
+    const cost = (item.quantity || 0) * (item.unitPrice || 0);
+    const margin = (item.margin || 35) / 100;
+    const sell = cost / (1 - margin);
+    return { totalCost: cost, totalSell: sell };
+  };
+
+  const getBOMTotals = () => {
+    const totals = bomItems.reduce((acc, item) => {
+      acc.totalCost += item.totalCost;
+      acc.totalSell += item.totalSell;
+      return acc;
+    }, { totalCost: 0, totalSell: 0 });
+    return totals;
+  };
+
+  const getUniqueCategories = () => {
+    const categories = [...new Set(bomItems.map(item => item.category))];
+    const totalCost = bomItems.reduce((sum, item) => sum + item.totalCost, 0);
+    
+    return categories.map(category => {
+      const categoryItems = bomItems.filter(item => item.category === category);
+      const categoryTotalCost = categoryItems.reduce((sum, item) => sum + item.totalCost, 0);
+      const categoryTotalSell = categoryItems.reduce((sum, item) => sum + item.totalSell, 0);
+      
+      return {
+        id: category,
+        name: category,
+        itemCount: categoryItems.length,
+        totalCost: categoryTotalCost,
+        totalSell: categoryTotalSell,
+        percentageOfTotal: totalCost > 0 ? (categoryTotalCost / totalCost) * 100 : 0
+      };
+    });
+  };
+
+  const handleAddBOMItem = () => {
+    if (!newItem.description || !newItem.category) {
+      toast({
+        variant: "destructive",
+        title: "Missing Information",
+        description: "Please fill in the description and category fields."
+      });
+      return;
+    }
+
+    const { totalCost, totalSell } = calculateItemTotals(newItem);
+    const item: BOMItem = {
+      id: Date.now().toString(),
+      description: newItem.description!,
+      category: newItem.category!,
+      quantity: newItem.quantity || 1,
+      unit: newItem.unit || 'Each',
+      unitPrice: newItem.unitPrice || 0,
+      vendor: newItem.vendor || '',
+      partNumber: newItem.partNumber || '',
+      manufacturer: newItem.manufacturer || '',
+      modelNumber: newItem.modelNumber || '',
+      notes: newItem.notes || '',
+      totalCost,
+      totalSell,
+      margin: newItem.margin || 35
+    };
+
+    setBomItems(prev => [...prev, item]);
+    setBomCategories(getUniqueCategories());
+    
+    // Reset form
+    setNewItem({
+      description: '',
+      category: '',
+      quantity: 1,
+      unit: 'Each',
+      unitPrice: 0,
+      vendor: '',
+      partNumber: '',
+      manufacturer: '',
+      modelNumber: '',
+      notes: '',
+      margin: 35
+    });
+    
+    setIsAddItemModalOpen(false);
+    toast({
+      title: "Success",
+      description: "Item added to Bill of Materials"
+    });
+  };
+
+  const handleDeleteBOMItem = (itemId: string) => {
+    setBomItems(prev => prev.filter(item => item.id !== itemId));
+    setBomCategories(getUniqueCategories());
+    toast({
+      title: "Success",
+      description: "Item removed from Bill of Materials"
+    });
+  };
+
+  const handleDeleteAllBOMItems = () => {
+    if (window.confirm('Are you sure you want to delete all items? This action cannot be undone.')) {
+      setBomItems([]);
+      setBomCategories([]);
+      toast({
+        title: "Success",
+        description: "All items removed from Bill of Materials"
+      });
+    }
+  };
+
+  const handleAddCategory = () => {
+    if (!newCategoryName.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Missing Information",
+        description: "Please enter a category name."
+      });
+      return;
+    }
+
+    // Check if category already exists
+    if (bomCategories.some(cat => cat.name.toLowerCase() === newCategoryName.trim().toLowerCase())) {
+      toast({
+        variant: "destructive",
+        title: "Category Exists",
+        description: "A category with this name already exists."
+      });
+      return;
+    }
+
+    const newCategory: BOMCategory = {
+      id: Date.now().toString(),
+      name: newCategoryName.trim(),
+      itemCount: 0,
+      totalCost: 0,
+      totalSell: 0,
+      percentageOfTotal: 0
+    };
+
+    setBomCategories(prev => [...prev, newCategory]);
+    setNewCategoryName('');
+    setIsAddCategoryModalOpen(false);
+    toast({
+      title: "Success",
+      description: "Category added successfully"
+    });
+  };
+
+  const handleDeleteCategory = (categoryId: string) => {
+    const category = bomCategories.find(cat => cat.id === categoryId);
+    if (!category) return;
+
+    // Check if category has items
+    const itemsInCategory = bomItems.filter(item => item.category === category.name);
+    if (itemsInCategory.length > 0) {
+      toast({
+        variant: "destructive",
+        title: "Cannot Delete",
+        description: `Cannot delete category "${category.name}" because it contains ${itemsInCategory.length} item(s). Please remove or reassign the items first.`
+      });
+      return;
+    }
+
+    setBomCategories(prev => prev.filter(cat => cat.id !== categoryId));
+    toast({
+      title: "Success",
+      description: "Category deleted successfully"
+    });
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD'
+    }).format(amount);
+  };
 
   const handleDeleteDocument = async (docId: string) => {
     try {
@@ -1334,28 +1559,647 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
               </div>
             </div>
           </div>
-        ) : (
-          /* Other Sections Placeholder */
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                {sidebarSections.find(s => s.name === activeSection)?.icon && (
-                  <div className="w-8 h-8 text-gray-400">
-                    {React.createElement(sidebarSections.find(s => s.name === activeSection)!.icon, { className: "w-8 h-8" })}
+                 ) : activeSection === 'Bill of Materials' ? (
+           /* Bill of Materials Section */
+           <div className="flex-1 p-6 overflow-y-auto">
+             <div className="max-w-7xl mx-auto space-y-6">
+               {/* Header */}
+               <div className="flex items-center justify-between">
+                 <div>
+                   <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
+                     Bill of Materials
+                   </h1>
+                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                     Manage project materials and costs
+                   </p>
+                 </div>
+                 
+                                   {/* Action Buttons */}
+                  <div className="flex items-center space-x-3">
+                    <button className="flex items-center space-x-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-sm font-medium">
+                      <Brain className="w-4 h-4" />
+                      <span>AI Reclassify &apos;Other&apos;</span>
+                    </button>
+                    <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm font-medium">
+                      <Upload className="w-4 h-4" />
+                      <span>Import from Documents</span>
+                    </button>
+                    <button 
+                      onClick={() => setIsAddItemModalOpen(true)}
+                      className="flex items-center space-x-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-sm font-medium"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Add Item</span>
+                    </button>
+                    <button 
+                      onClick={handleDeleteAllBOMItems}
+                      className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Delete All</span>
+                    </button>
+                  </div>
+               </div>
+
+               {/* Summary Cards */}
+               <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                 <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                   <div className="flex items-center space-x-2">
+                     <Package className="w-5 h-5 text-blue-500" />
+                     <div>
+                       <p className="text-sm text-gray-600 dark:text-gray-400">Total Items</p>
+                       <p className="text-xl font-semibold text-gray-900 dark:text-white">
+                         {bomItems.length}
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+                 
+                 <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                   <div className="flex items-center space-x-2">
+                     <Package className="w-5 h-5 text-green-500" />
+                     <div>
+                       <p className="text-sm text-gray-600 dark:text-gray-400">Material Cost</p>
+                       <p className="text-xl font-semibold text-green-600 dark:text-green-400">
+                         {formatCurrency(getBOMTotals().totalCost)}
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+                 
+                 <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                   <div className="flex items-center space-x-2">
+                     <Package className="w-5 h-5 text-green-500" />
+                     <div>
+                       <p className="text-sm text-gray-600 dark:text-gray-400">Customer Price</p>
+                       <p className="text-xl font-semibold text-green-600 dark:text-green-400">
+                         {formatCurrency(getBOMTotals().totalSell)}
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+                 
+                 <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                   <div className="flex items-center space-x-2">
+                     <Package className="w-5 h-5 text-purple-500" />
+                     <div>
+                       <p className="text-sm text-gray-600 dark:text-gray-400">Categories</p>
+                       <p className="text-xl font-semibold text-gray-900 dark:text-white">
+                         {bomCategories.length}
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+
+                               {/* Tabs */}
+                <div className="flex space-x-4 border-b border-gray-200 dark:border-gray-700">
+                  <button
+                    onClick={() => setActiveBOMTab('BOM Items')}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                      activeBOMTab === 'BOM Items'
+                        ? 'border-black dark:border-white text-black dark:text-white'
+                        : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    BOM Items
+                  </button>
+                  <button
+                    onClick={() => setActiveBOMTab('Categories')}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                      activeBOMTab === 'Categories'
+                        ? 'border-black dark:border-white text-black dark:text-white'
+                        : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    Categories
+                  </button>
+                </div>
+
+               {/* BOM Items Tab */}
+               {activeBOMTab === 'BOM Items' && (
+                 <div className="space-y-6">
+                   {bomCategories.map((category) => (
+                     <div key={category.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                       {/* Category Header */}
+                       <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+                         <div className="flex items-center justify-between">
+                           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                             {category.name}
+                           </h3>
+                           <div className="flex items-center space-x-4 text-sm">
+                             <span className="text-gray-600 dark:text-gray-400">
+                               {category.itemCount} items
+                             </span>
+                             <div className="flex space-x-2">
+                               <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-300 rounded text-xs">
+                                 Cost: {formatCurrency(category.totalCost)}
+                               </span>
+                               <span className="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-300 rounded text-xs">
+                                 Sell: {formatCurrency(category.totalSell)}
+                               </span>
+                             </div>
+                           </div>
+                         </div>
+                       </div>
+
+                       {/* Items Table */}
+                       <div className="overflow-x-auto">
+                         <table className="w-full">
+                           <thead className="bg-gray-50 dark:bg-gray-700">
+                             <tr>
+                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                 Description
+                               </th>
+                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                 Manufacturer / Category
+                               </th>
+                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                 Qty
+                               </th>
+                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                 Unit
+                               </th>
+                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                 Cost Price
+                               </th>
+                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                 Pricing
+                               </th>
+                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                 Sell Price
+                               </th>
+                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                 Total Cost
+                               </th>
+                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                 Total Sell
+                               </th>
+                               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                 Actions
+                               </th>
+                             </tr>
+                           </thead>
+                           <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                             {bomItems
+                               .filter(item => item.category === category.name)
+                               .map((item) => (
+                                 <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                     {item.description}
+                                   </td>
+                                   <td className="px-6 py-4 whitespace-nowrap">
+                                     <div>
+                                       <div className="text-sm text-gray-900 dark:text-white">
+                                         {item.manufacturer || 'N/A'}
+                                       </div>
+                                       <div className="text-xs text-gray-500 dark:text-gray-400">
+                                         {item.category}
+                                       </div>
+                                     </div>
+                                   </td>
+                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                     {item.quantity.toFixed(3)}
+                                   </td>
+                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                     {item.unit}
+                                   </td>
+                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                     {formatCurrency(item.unitPrice)}
+                                   </td>
+                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                     Margin {item.margin}%
+                                   </td>
+                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                     {formatCurrency(item.totalSell / item.quantity)}
+                                   </td>
+                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                     {formatCurrency(item.totalCost)}
+                                   </td>
+                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                     {formatCurrency(item.totalSell)}
+                                   </td>
+                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                     <button
+                                       onClick={() => handleDeleteBOMItem(item.id)}
+                                       className="text-red-600 hover:text-red-900 dark:hover:text-red-400"
+                                     >
+                                       <Trash2 className="w-4 h-4" />
+                                     </button>
+                                   </td>
+                                 </tr>
+                               ))}
+                           </tbody>
+                         </table>
+                       </div>
+                     </div>
+                   ))}
+
+                   {bomItems.length === 0 && (
+                     <div className="text-center py-12">
+                       <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                       <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                         No items in Bill of Materials
+                       </h3>
+                       <p className="text-gray-500 dark:text-gray-400 mb-4">
+                         Start by adding your first item to the bill of materials.
+                       </p>
+                                               <button
+                          onClick={() => setIsAddItemModalOpen(true)}
+                          className="inline-flex items-center space-x-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors font-medium"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add First Item</span>
+                        </button>
+                     </div>
+                   )}
+                 </div>
+               )}
+
+                               {/* Categories Tab */}
+                {activeBOMTab === 'Categories' && (
+                  <div className="space-y-6">
+                    {/* Categories Table */}
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                            Material Categories
+                          </h3>
+                          <button
+                            onClick={() => setIsAddCategoryModalOpen(true)}
+                            className="flex items-center space-x-2 px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-sm font-medium"
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span>Add Category</span>
+                          </button>
+                        </div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                          Overview of material categories and costs
+                        </p>
+                      </div>
+                      
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="bg-gray-50 dark:bg-gray-700">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Category
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Items
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Total Cost
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                % of Total
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                Actions
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                            {bomCategories.map((category) => (
+                              <tr key={category.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                                  {category.name}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                  {category.itemCount} item{category.itemCount !== 1 ? 's' : ''}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                  {formatCurrency(category.totalCost)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                  {category.percentageOfTotal.toFixed(1)}%
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                  <button
+                                    onClick={() => handleDeleteCategory(category.id)}
+                                    className="text-red-600 hover:text-red-900 dark:hover:text-red-400"
+                                    title="Delete category"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {bomCategories.length === 0 && (
+                      <div className="text-center py-12">
+                        <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                          No categories found
+                        </h3>
+                        <p className="text-gray-500 dark:text-gray-400 mb-4">
+                          Create your first category to get started.
+                        </p>
+                        <button
+                          onClick={() => setIsAddCategoryModalOpen(true)}
+                          className="inline-flex items-center space-x-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors font-medium"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add First Category</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
+             </div>
+           </div>
+         ) : (
+           /* Other Sections Placeholder */
+           <div className="flex-1 flex items-center justify-center">
+             <div className="text-center">
+               <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                 {sidebarSections.find(s => s.name === activeSection)?.icon && (
+                   <div className="w-8 h-8 text-gray-400">
+                     {React.createElement(sidebarSections.find(s => s.name === activeSection)!.icon, { className: "w-8 h-8" })}
+                   </div>
+                 )}
+               </div>
+               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                 {activeSection}
+               </h3>
+               <p className="text-gray-500 dark:text-gray-400">
+                 This section is coming soon. Stay tuned for updates!
+               </p>
+             </div>
+           </div>
+         )}
               </div>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                {activeSection}
-              </h3>
-              <p className="text-gray-500 dark:text-gray-400">
-                This section is coming soon. Stay tuned for updates!
-              </p>
+
+                 {/* Add Category Modal */}
+         {isAddCategoryModalOpen && (
+           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+             <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full">
+               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                 <div className="flex items-center justify-between">
+                   <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                     Add New Category
+                   </h2>
+                   <button
+                     onClick={() => setIsAddCategoryModalOpen(false)}
+                     className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                   >
+                     <X className="w-6 h-6" />
+                   </button>
+                 </div>
+               </div>
+
+               <div className="p-6">
+                 <div className="space-y-4">
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                       Category Name
+                     </label>
+                     <input
+                       type="text"
+                       value={newCategoryName}
+                       onChange={(e) => setNewCategoryName(e.target.value)}
+                       placeholder="Enter category name"
+                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                       onKeyPress={(e) => e.key === 'Enter' && handleAddCategory()}
+                     />
+                   </div>
+                 </div>
+
+                 {/* Action Buttons */}
+                 <div className="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                   <button
+                     onClick={() => setIsAddCategoryModalOpen(false)}
+                     className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                   >
+                     Cancel
+                   </button>
+                   <button
+                     onClick={handleAddCategory}
+                     className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
+                   >
+                     Add Category
+                   </button>
+                 </div>
+               </div>
+             </div>
+           </div>
+         )}
+
+         {/* Add Item Modal */}
+         {isAddItemModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    Add a new item to the bill of materials.
+                  </h2>
+                  <button
+                    onClick={() => setIsAddItemModalOpen(false)}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Item Description */}
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Item Description
+                    </label>
+                                         <input
+                       type="text"
+                       value={newItem.description}
+                       onChange={(e) => setNewItem(prev => ({ ...prev, description: e.target.value }))}
+                       placeholder="Enter item description"
+                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                     />
+                  </div>
+
+                                     {/* Category */}
+                   <div className="md:col-span-2">
+                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                       Category
+                     </label>
+                     <Select 
+                       value={newItem.category} 
+                       onValueChange={(value) => {
+                         if (value === 'create-new') {
+                           setIsAddCategoryModalOpen(true);
+                         } else {
+                           setNewItem(prev => ({ ...prev, category: value }));
+                         }
+                       }}
+                     >
+                       <SelectTrigger className="w-full">
+                         <SelectValue placeholder="Select existing category or create new" />
+                       </SelectTrigger>
+                       <SelectContent>
+                         {bomCategories.map((category) => (
+                           <SelectItem key={category.id} value={category.name}>
+                             {category.name} ({category.itemCount} items)
+                           </SelectItem>
+                         ))}
+                         <SelectItem value="create-new" className="text-blue-600 dark:text-blue-400">
+                           + Create New Category
+                         </SelectItem>
+                       </SelectContent>
+                     </Select>
+                   </div>
+
+                  {/* Quantity */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Quantity
+                    </label>
+                    <input
+                      type="number"
+                      value={newItem.quantity}
+                      onChange={(e) => setNewItem(prev => ({ ...prev, quantity: parseFloat(e.target.value) || 0 }))}
+                      min="0"
+                      step="0.001"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                    />
+                  </div>
+
+                  {/* Unit */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Unit
+                    </label>
+                    <Select 
+                      value={newItem.unit} 
+                      onValueChange={(value) => setNewItem(prev => ({ ...prev, unit: value }))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select unit" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Each">Each</SelectItem>
+                        <SelectItem value="Box">Box</SelectItem>
+                        <SelectItem value="Case">Case</SelectItem>
+                        <SelectItem value="Foot">Foot</SelectItem>
+                        <SelectItem value="Meter">Meter</SelectItem>
+                        <SelectItem value="License">License</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Unit Price */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Unit Price
+                    </label>
+                    <input
+                      type="number"
+                      value={newItem.unitPrice}
+                      onChange={(e) => setNewItem(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }))}
+                      min="0"
+                      step="0.01"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                    />
+                  </div>
+
+                  {/* Vendor */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Vendor
+                    </label>
+                    <input
+                      type="text"
+                      value={newItem.vendor}
+                      onChange={(e) => setNewItem(prev => ({ ...prev, vendor: e.target.value }))}
+                      placeholder="Vendor name"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                    />
+                  </div>
+
+                  {/* Part Number */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Part Number
+                    </label>
+                    <input
+                      type="text"
+                      value={newItem.partNumber}
+                      onChange={(e) => setNewItem(prev => ({ ...prev, partNumber: e.target.value }))}
+                      placeholder="Vendor part number"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                    />
+                  </div>
+
+                  {/* Manufacturer */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Manufacturer
+                    </label>
+                    <input
+                      type="text"
+                      value={newItem.manufacturer}
+                      onChange={(e) => setNewItem(prev => ({ ...prev, manufacturer: e.target.value }))}
+                      placeholder="Manufacturer"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                    />
+                  </div>
+
+                  {/* Model Number */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Model Number
+                    </label>
+                    <input
+                      type="text"
+                      value={newItem.modelNumber}
+                      onChange={(e) => setNewItem(prev => ({ ...prev, modelNumber: e.target.value }))}
+                      placeholder="Model number"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                    />
+                  </div>
+
+                  {/* Notes */}
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Notes
+                    </label>
+                    <textarea
+                      value={newItem.notes}
+                      onChange={(e) => setNewItem(prev => ({ ...prev, notes: e.target.value }))}
+                      placeholder="Additional notes"
+                      rows={3}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white resize-none"
+                    />
+                  </div>
+                </div>
+
+                                 {/* Action Buttons */}
+                 <div className="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                   <button
+                     onClick={() => setIsAddItemModalOpen(false)}
+                     className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                   >
+                     Cancel
+                   </button>
+                   <button
+                     onClick={handleAddBOMItem}
+                     className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
+                   >
+                     Add Item
+                   </button>
+                 </div>
+              </div>
             </div>
           </div>
         )}
+
+        <Toaster />
       </div>
-      <Toaster />
-    </div>
-  );
-}
+    );
+  }
