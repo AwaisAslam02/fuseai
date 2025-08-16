@@ -40,12 +40,12 @@ interface Contact {
   contact_name: string;
 }
 
-export default function EditProjectPage({ params }: { params: { id: string } }) {
+export default function EditProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [project, setProject] = useState<Project>({
-    id: params.id,
+    id: '',
     title: '',
     status: 'pending',
     description: '',
@@ -58,6 +58,16 @@ export default function EditProjectPage({ params }: { params: { id: string } }) 
     address: '',
     date: ''
   });
+  const [projectId, setProjectId] = useState<string>('');
+
+  // Handle async params
+  useEffect(() => {
+    const getParams = async () => {
+      const resolvedParams = await params;
+      setProjectId(resolvedParams.id);
+    };
+    getParams();
+  }, [params]);
 
   // API data states
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -210,7 +220,7 @@ export default function EditProjectPage({ params }: { params: { id: string } }) 
         });
 
         // Navigate back to project details
-        router.push(`/projects/${params.id}`);
+        router.push(`/projects/${projectId}`);
       } else {
         throw new Error(data.message || 'Failed to update project');
       }
@@ -227,7 +237,7 @@ export default function EditProjectPage({ params }: { params: { id: string } }) 
   };
 
   const handleCancel = () => {
-    router.push(`/projects/${params.id}`);
+    router.push(`/projects/${projectId}`);
   };
 
   return (
@@ -240,7 +250,7 @@ export default function EditProjectPage({ params }: { params: { id: string } }) 
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4">
               <Link 
-                href={`/projects/${params.id}`}
+                href={`/projects/${projectId}`}
                 className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
               >
                 <ArrowLeft className="w-5 h-5" />

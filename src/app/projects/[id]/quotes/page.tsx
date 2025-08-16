@@ -18,14 +18,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 interface CustomerInfo {
   companyName: string;
+  phone: string;
   projectName: string;
+  address: string;
   contactName: string;
   email: string;
-  phone: string;
-  address: string;
-  city: string;
-  state: string;
-  zip: string;
 }
 
 export default function QuotesPage() {
@@ -36,28 +33,22 @@ export default function QuotesPage() {
       if (storedProject) {
         const projectData = JSON.parse(storedProject);
         return {
-          companyName: projectData.company,
-          projectName: projectData.title,
-          contactName: projectData.contact.name,
-          email: projectData.contact.email,
-          phone: projectData.contact.phone,
+          companyName: projectData.company || '',
+          phone: projectData.contact?.phone || '',
+          projectName: projectData.title || '',
           address: projectData.address || '',
-          city: 'Memphis', // Default values for fields not in project data
-          state: 'MS',
-          zip: '38632'
+          contactName: projectData.contact?.name || '',
+          email: projectData.contact?.email || ''
         };
       }
     }
     return {
       companyName: '',
-      projectName: '',
-      contactName: '',
-      email: '',
       phone: '',
+      projectName: '',
       address: '',
-      city: '',
-      state: '',
-      zip: ''
+      contactName: '',
+      email: ''
     };
   });
 
@@ -128,11 +119,31 @@ export default function QuotesPage() {
                   </div>
 
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone</label>
+                    <input
+                      type="tel"
+                      value={customerInfo.phone}
+                      onChange={(e) => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Project Name</label>
                     <input
                       type="text"
                       value={customerInfo.projectName}
                       onChange={(e) => setCustomerInfo({ ...customerInfo, projectName: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Address</label>
+                    <input
+                      type="text"
+                      value={customerInfo.address}
+                      onChange={(e) => setCustomerInfo({ ...customerInfo, address: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
                     />
                   </div>
@@ -155,58 +166,6 @@ export default function QuotesPage() {
                       onChange={(e) => setCustomerInfo({ ...customerInfo, email: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
                     />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone</label>
-                    <input
-                      type="tel"
-                      value={customerInfo.phone}
-                      onChange={(e) => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Address</label>
-                    <input
-                      type="text"
-                      value={customerInfo.address}
-                      onChange={(e) => setCustomerInfo({ ...customerInfo, address: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
-                      <input
-                        type="text"
-                        value={customerInfo.city}
-                        onChange={(e) => setCustomerInfo({ ...customerInfo, city: e.target.value })}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">State</label>
-                      <input
-                        type="text"
-                        value={customerInfo.state}
-                        onChange={(e) => setCustomerInfo({ ...customerInfo, state: e.target.value })}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ZIP</label>
-                      <input
-                        type="text"
-                        value={customerInfo.zip}
-                        onChange={(e) => setCustomerInfo({ ...customerInfo, zip: e.target.value })}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
-                      />
-                    </div>
                   </div>
                 </div>
               </div>

@@ -19,7 +19,9 @@ interface ProjectForm {
   address: string;
   description: string;
   customer: string;
+  customer_id: string;
   primaryContact: string;
+  contact_id: string;
 }
 
 interface CustomerForm {
@@ -57,7 +59,9 @@ export default function CreateProjectPage() {
     address: '',
     description: '',
     customer: '',
-    primaryContact: ''
+    customer_id: '',
+    primaryContact: '',
+    contact_id: ''
   });
 
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -198,7 +202,9 @@ export default function CreateProjectPage() {
           project_status: formData.status.toLowerCase(),
           project_address: formData.address,
           project_customer_name: formData.customer,
-          project_contact: formData.primaryContact
+          customer_id: formData.customer_id,
+          project_contact: formData.primaryContact,
+          contact_id: formData.contact_id
         })
       });
 
@@ -213,7 +219,9 @@ export default function CreateProjectPage() {
           address: '',
           description: '',
           customer: '',
-          primaryContact: ''
+          customer_id: '',
+          primaryContact: '',
+          contact_id: ''
         });
       } else {
         alert(data.message || 'Failed to create project');
@@ -260,7 +268,7 @@ export default function CreateProjectPage() {
         });
         // Close modal
         setShowCustomerModal(false);
-        // Refresh customers list
+        // Refresh customers list and auto-select the newly created customer
         const customersResponse = await fetch('http://localhost:8000/api/fusedai/get-all-customers', {
           method: 'POST',
           headers: {
@@ -271,6 +279,12 @@ export default function CreateProjectPage() {
         const customersData = await customersResponse.json();
         if (customersResponse.ok) {
           setCustomers(customersData.customers);
+          // Auto-select the newly created customer
+          const newCustomer = customersData.customers.find((c: Customer) => c.customer_name === customerForm.companyName);
+          if (newCustomer) {
+            handleInputChange('customer', newCustomer.customer_name);
+            handleInputChange('customer_id', newCustomer.customer_id);
+          }
         }
       } else {
         alert(data.message || 'Failed to create customer');
@@ -321,7 +335,7 @@ export default function CreateProjectPage() {
         });
         // Close modal
         setShowContactModal(false);
-        // Refresh contacts list
+        // Refresh contacts list and auto-select the newly created contact
         const contactsResponse = await fetch('http://localhost:8000/api/fusedai/get-all-contacts', {
           method: 'POST',
           headers: {
@@ -332,6 +346,12 @@ export default function CreateProjectPage() {
         const contactsData = await contactsResponse.json();
         if (contactsResponse.ok) {
           setContacts(contactsData.contacts);
+          // Auto-select the newly created contact
+          const newContact = contactsData.contacts.find((c: Contact) => c.contact_name === `${contactForm.firstName} ${contactForm.lastName}`);
+          if (newContact) {
+            handleInputChange('primaryContact', newContact.contact_name);
+            handleInputChange('contact_id', newContact.contact_id);
+          }
         }
       } else {
         alert(data.message || 'Failed to create contact');
@@ -486,7 +506,11 @@ export default function CreateProjectPage() {
                  <div className="flex-1">
                                      <Select 
                     value={formData.customer} 
-                    onValueChange={(value) => handleInputChange('customer', value)}
+                    onValueChange={(value) => {
+                      const selectedCustomer = customers.find(c => c.customer_name === value);
+                      handleInputChange('customer', value);
+                      handleInputChange('customer_id', selectedCustomer?.customer_id || '');
+                    }}
                     disabled={isLoadingCustomers}
                   >
                     <SelectTrigger className="w-full">
@@ -529,7 +553,11 @@ export default function CreateProjectPage() {
                  <div className="flex-1">
                                      <Select 
                     value={formData.primaryContact} 
-                    onValueChange={(value) => handleInputChange('primaryContact', value)}
+                    onValueChange={(value) => {
+                      const selectedContact = contacts.find(c => c.contact_name === value);
+                      handleInputChange('primaryContact', value);
+                      handleInputChange('contact_id', selectedContact?.contact_id || '');
+                    }}
                     disabled={isLoadingContacts}
                   >
                     <SelectTrigger className="w-full">

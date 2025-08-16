@@ -31,7 +31,8 @@ import {
   Search,
   Filter,
   Plus,
-  X
+  X,
+  Save
 } from 'lucide-react';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/theme-provider';
@@ -115,7 +116,7 @@ const getCategoryFromType = (fileType: string): Document['category'] => {
   return 'other';
 };
 
-export default function ProjectChatPage({ params }: { params: { id: string } }) {
+export default function ProjectChatPage({ params }: { params: Promise<{ id: string }> }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -125,8 +126,18 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
   const [activeQuoteTab, setActiveQuoteTab] = useState('Customer Setup');
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(true);
   const [documentSearch, setDocumentSearch] = useState('');
+  const [projectId, setProjectId] = useState<string>('');
   const [documentFilter, setDocumentFilter] = useState('all');
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+
+  // Handle async params
+  useEffect(() => {
+    const getParams = async () => {
+      const resolvedParams = await params;
+      setProjectId(resolvedParams.id);
+    };
+    getParams();
+  }, [params]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -160,7 +171,7 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
       }
     }
     return {
-    id: params.id,
+      id: '',
       title: 'Loading...',
       status: 'pending',
       description: 'Loading project details...',
@@ -203,9 +214,9 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
             'Content-Type': 'application/json',
             'token': token
           },
-          body: JSON.stringify({
-            project_id: params.id
-          })
+                  body: JSON.stringify({
+          project_id: projectId
+        })
         });
 
         const data = await response.json();
@@ -255,9 +266,9 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
             'Content-Type': 'application/json',
             'token': token
           },
-          body: JSON.stringify({
-            project_id: parseInt(params.id)
-          })
+                  body: JSON.stringify({
+          project_id: parseInt(projectId)
+        })
         });
 
         const data = await response.json();
@@ -343,7 +354,7 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
     };
 
     fetchProjectMessages();
-  }, [params.id]);
+  }, [projectId]);
 
   const sidebarSections = [
     { name: 'Project Chat', icon: MessageCircle, active: true },
@@ -429,7 +440,7 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
       try {
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('project_id', params.id);  // Adding project_id to FormData
+        formData.append('project_id', projectId);  // Adding project_id to FormData
 
         const token = localStorage.getItem('token');
         if (!token) {
@@ -453,17 +464,17 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
 
         if (response.ok) {
           // Add the file to the documents list using the document_id from API response
-          const newDoc: Document = {
+        const newDoc: Document = {
             id: data.document_id || Date.now().toString(), // Use document_id from API response
-            name: file.name,
-            type: getFileType(file.name),
-            size: formatFileSize(file.size),
-            uploadedBy: 'You',
-            uploadedAt: new Date().toISOString().split('T')[0],
+          name: file.name,
+          type: getFileType(file.name),
+          size: formatFileSize(file.size),
+          uploadedBy: 'You',
+          uploadedAt: new Date().toISOString().split('T')[0],
             category: 'other',
             url: data.url || '' // Backend should return the S3 URL
-          };
-          setDocuments(prev => [newDoc, ...prev]);
+        };
+        setDocuments(prev => [newDoc, ...prev]);
           
           toast({
             title: "Success",
@@ -519,6 +530,26 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
   };
 
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+
+  // Project related data for quotes
+  const [projectRelatedData, setProjectRelatedData] = useState<{
+    project_name: string;
+    contact_name: string;
+    company_name: string;
+    email: string;
+    phone: string;
+    image_url: string | null;
+  } | null>(null);
+  const [isLoadingProjectData, setIsLoadingProjectData] = useState(false);
+  const [projectDataError, setProjectDataError] = useState<string | null>(null);
+
+  // Project image state
+  const [projectImage, setProjectImage] = useState<string | null>(null);
+  const [isLoadingImage, setIsLoadingImage] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const { toast } = useToast();
 
@@ -755,6 +786,63 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
     scrollToBottom();
   }, [messages]);
 
+  // Fetch project related data when quotes section is active
+  useEffect(() => {
+    if (activeSection === 'Quotes' && projectId && !projectRelatedData) {
+      const fetchProjectRelatedData = async () => {
+        try {
+          setIsLoadingProjectData(true);
+          setProjectDataError(null);
+
+          const token = localStorage.getItem('token');
+          if (!token) {
+            setProjectDataError('Authentication token not found');
+            setIsLoadingProjectData(false);
+            return;
+          }
+
+          const response = await fetch('http://localhost:8000/api/fusedai/get-project-related-data', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'token': token
+            },
+            body: JSON.stringify({
+              project_id: parseInt(projectId)
+            })
+          });
+
+          const data = await response.json();
+          
+          if (response.ok) {
+            setProjectRelatedData(data.project);
+          } else {
+            throw new Error(data.message || 'Failed to fetch project data');
+          }
+        } catch (error) {
+          console.error('Error fetching project related data:', error);
+          setProjectDataError(error instanceof Error ? error.message : 'Failed to fetch project data');
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Failed to fetch project data for quotes"
+          });
+        } finally {
+          setIsLoadingProjectData(false);
+        }
+      };
+
+      fetchProjectRelatedData();
+    }
+  }, [activeSection, projectId, projectRelatedData, toast]);
+
+  // Set project image from project related data
+  useEffect(() => {
+    if (projectRelatedData && projectRelatedData.image_url) {
+      setProjectImage(projectRelatedData.image_url);
+    }
+  }, [projectRelatedData]);
+
   const handleSendMessage = async () => {
     if (!input.trim()) return;
 
@@ -792,7 +880,7 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
           'token': token
         },
         body: JSON.stringify({
-          project_id: params.id,
+          project_id: projectId,
           message: currentInput
         })
       });
@@ -800,17 +888,17 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
       const data = await response.json();
 
       if (response.ok) {
-        const aiMessage: Message = {
-          id: messages.length + 2,
-          role: 'assistant',
+      const aiMessage: Message = {
+        id: messages.length + 2,
+        role: 'assistant',
           content: data.ai_response,
-          timestamp: new Date().toLocaleTimeString('en-US', { 
-            hour: 'numeric', 
-            minute: '2-digit',
-            hour12: true 
-          })
-        };
-        setMessages(prev => [...prev, aiMessage]);
+        timestamp: new Date().toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        })
+      };
+      setMessages(prev => [...prev, aiMessage]);
       } else {
         throw new Error(data.message || 'Failed to get AI response');
       }
@@ -846,6 +934,154 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
     }
   };
 
+  // Image handling functions
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB for images
+
+    if (file.size > MAX_FILE_SIZE) {
+      toast({
+        variant: "destructive",
+        title: "File Too Large",
+        description: "Image file is too large. Maximum size is 10MB."
+      });
+      return;
+    }
+
+    // Check if file is an image
+    if (!file.type.startsWith('image/')) {
+      toast({
+        variant: "destructive",
+        title: "Invalid File Type",
+        description: "Please select an image file (JPG, PNG, GIF, etc.)"
+      });
+      return;
+    }
+
+    setSelectedImageFile(file);
+    toast({
+      title: "Image Selected",
+      description: `${file.name} selected. Click 'Upload Image' to save it.`
+    });
+  };
+
+  const handleUploadImage = async () => {
+    if (!selectedImageFile) return;
+
+    try {
+      setIsUploadingImage(true);
+
+      const formData = new FormData();
+      formData.append('file', selectedImageFile);
+      formData.append('project_id', projectId);
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "Authentication token not found. Please log in again."
+        });
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/upload-any-file', {
+        method: 'POST',
+        headers: {
+          'token': token
+        },
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Store the uploaded file URL temporarily
+        const imageUrl = data.url || data.document_url;
+        setProjectImage(imageUrl);
+        setSelectedImageFile(null);
+        
+        toast({
+          title: "Success",
+          description: "Image uploaded successfully! Click 'Save Image' to store it permanently."
+        });
+      } else {
+        throw new Error(data.message || 'Failed to upload image');
+      }
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      toast({
+        variant: "destructive",
+        title: "Upload Error",
+        description: "Failed to upload image. Please try again."
+      });
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const handleSaveImage = async () => {
+    if (!projectImage) return;
+
+    try {
+      setIsUploadingImage(true);
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "Authentication token not found. Please log in again."
+        });
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/fusedai/project-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': token
+        },
+        body: JSON.stringify({
+          project_id: parseInt(projectId),
+          image_url: projectImage
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Project image saved successfully!"
+        });
+      } else {
+        throw new Error(data.message || 'Failed to save project image');
+      }
+    } catch (error) {
+      console.error('Error saving image:', error);
+      toast({
+        variant: "destructive",
+        title: "Save Error",
+        description: "Failed to save project image. Please try again."
+      });
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setProjectImage(null);
+    setSelectedImageFile(null);
+    toast({
+      title: "Image Removed",
+      description: "Project image has been removed."
+    });
+  };
+
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 flex">
       {/* Sidebar */}
@@ -878,7 +1114,7 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                </div>
                
                <Link 
-                 href={`/projects/${params.id}/edit`}
+                 href={`/projects/${projectId}/edit`}
                  className="w-full flex items-center justify-center space-x-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
                >
                  <Edit3 className="w-3 h-3" />
@@ -1067,12 +1303,30 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                 <div className="p-6">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Customer Information</h2>
                   
+                  {isLoadingProjectData ? (
+                    <div className="flex justify-center items-center py-8">
+                      <div className="flex flex-col items-center space-y-4">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black dark:border-white"></div>
+                        <p className="text-gray-500 dark:text-gray-400">Loading project data...</p>
+                      </div>
+                    </div>
+                  ) : projectDataError ? (
+                    <div className="text-center py-8">
+                      <p className="text-red-500 dark:text-red-400">{projectDataError}</p>
+                      <button
+                        onClick={() => setProjectRelatedData(null)}
+                        className="mt-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-sm"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : projectRelatedData ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Company Name</label>
                       <input
                         type="text"
-                        defaultValue={project.company}
+                          defaultValue={projectRelatedData.company_name}
                         className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
                       />
                     </div>
@@ -1081,7 +1335,7 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Project Name</label>
                       <input
                         type="text"
-                        defaultValue={project.title}
+                          defaultValue={projectRelatedData.project_name}
                         className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
                       />
                     </div>
@@ -1090,7 +1344,7 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Contact Name</label>
                       <input
                         type="text"
-                        defaultValue={project.contact.name}
+                          defaultValue={projectRelatedData.contact_name}
                         className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
                       />
                     </div>
@@ -1099,7 +1353,7 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email</label>
                       <input
                         type="email"
-                        defaultValue={project.contact.email}
+                          defaultValue={projectRelatedData.email}
                         className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
                       />
                     </div>
@@ -1108,40 +1362,16 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone</label>
                       <input
                         type="tel"
-                        defaultValue={project.contact.phone}
+                          defaultValue={projectRelatedData.phone}
                         className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
                       />
                     </div>
-
-                    <div className="grid grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
-                        <input
-                          type="text"
-                          defaultValue="Memphis"
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
-                        />
                       </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">State</label>
-                        <input
-                          type="text"
-                          defaultValue="MS"
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
-                        />
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-gray-500 dark:text-gray-400">No project data available</p>
                       </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ZIP</label>
-                        <input
-                          type="text"
-                          defaultValue="38632"
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent"
-                        />
-                      </div>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
@@ -1167,14 +1397,144 @@ export default function ProjectChatPage({ params }: { params: { id: string } }) 
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Preview</label>
-                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-6 bg-white dark:bg-gray-900">
-                        <img 
-                          src="/path/to/company-logo.png" 
-                          alt="Company Logo Preview"
-                          className="max-w-full h-auto"
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Project Image</label>
+                      
+                      {isLoadingProjectData ? (
+                        <div className="flex justify-center items-center py-8">
+                          <div className="flex flex-col items-center space-y-4">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black dark:border-white"></div>
+                            <p className="text-gray-500 dark:text-gray-400">Loading project data...</p>
+                          </div>
+                        </div>
+                      ) : imageError ? (
+                        <div className="text-center py-8">
+                          <p className="text-red-500 dark:text-red-400">{imageError}</p>
+                        </div>
+                      ) : projectImage ? (
+                        <div className="space-y-4">
+                          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-900">
+                            <img 
+                              src={projectImage} 
+                              alt="Project Image"
+                              className="max-w-full h-auto max-h-64 mx-auto"
+                              onError={() => {
+                                setImageError('Failed to load image');
+                                setProjectImage(null);
+                              }}
                         />
                       </div>
+                                         <div className="flex space-x-3">
+                 <button
+                   onClick={() => imageInputRef.current?.click()}
+                   className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+                 >
+                   <Image className="w-4 h-4" />
+                   <span>Replace Image</span>
+                 </button>
+                 <button
+                   onClick={handleSaveImage}
+                   disabled={isUploadingImage}
+                   className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                     isUploadingImage
+                       ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                       : 'bg-green-600 hover:bg-green-700 text-white'
+                   }`}
+                 >
+                   {isUploadingImage ? (
+                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                   ) : (
+                     <Save className="w-4 h-4" />
+                   )}
+                   <span>{isUploadingImage ? 'Saving...' : 'Save Image'}</span>
+                 </button>
+                 <button
+                   onClick={handleRemoveImage}
+                   className="flex items-center space-x-2 px-4 py-2 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm"
+                 >
+                   <Trash2 className="w-4 h-4" />
+                   <span>Remove Image</span>
+                 </button>
+               </div>
+                  </div>
+                      ) : selectedImageFile ? (
+                        <div className="space-y-4">
+                          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-900">
+                            <img 
+                              src={URL.createObjectURL(selectedImageFile)} 
+                              alt="Selected Image Preview"
+                              className="max-w-full h-auto max-h-64 mx-auto"
+                            />
+                </div>
+                                         <div className="flex space-x-3">
+                 <button
+                   onClick={handleUploadImage}
+                   disabled={isUploadingImage}
+                   className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                     isUploadingImage
+                       ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                       : 'bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200'
+                   }`}
+                 >
+                   {isUploadingImage ? (
+                     <div className="w-4 h-4 border-2 border-white dark:border-black border-t-transparent rounded-full animate-spin" />
+                   ) : (
+                     <Upload className="w-4 h-4" />
+                   )}
+                   <span>{isUploadingImage ? 'Uploading...' : 'Upload Image'}</span>
+                 </button>
+                 <button
+                   onClick={handleSaveImage}
+                   disabled={isUploadingImage}
+                   className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                     isUploadingImage
+                       ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                       : 'bg-green-600 hover:bg-green-700 text-white'
+                   }`}
+                 >
+                   {isUploadingImage ? (
+                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                   ) : (
+                     <Save className="w-4 h-4" />
+                   )}
+                   <span>{isUploadingImage ? 'Saving...' : 'Save Image'}</span>
+                 </button>
+                 <button
+                   onClick={() => {
+                     setSelectedImageFile(null);
+                     imageInputRef.current!.value = '';
+                   }}
+                   className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+                 >
+                   <X className="w-4 h-4" />
+                   <span>Cancel</span>
+                 </button>
+               </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 bg-gray-50 dark:bg-gray-900 text-center">
+                            <Image className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                            <p className="text-gray-500 dark:text-gray-400 mb-2">No project image uploaded</p>
+                            <p className="text-sm text-gray-400 dark:text-gray-500">Upload an image to display in your quotes</p>
+                          </div>
+                          <button
+                            onClick={() => imageInputRef.current?.click()}
+                            className="flex items-center space-x-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-sm font-medium"
+                          >
+                            <Image className="w-4 h-4" />
+                            <span>Attach Image</span>
+                          </button>
+                        </div>
+                      )}
+                      
+                      <input
+                        ref={imageInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageSelect}
+                        className="hidden"
+                        title="Select image file (max 10MB)"
+                      />
                     </div>
                   </div>
                 </div>
