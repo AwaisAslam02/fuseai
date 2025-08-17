@@ -15,6 +15,7 @@ import {
   Send,
   Bot,
   User,
+  Users,
   Maximize2,
   Minimize2,
   Mail,
@@ -32,13 +33,16 @@ import {
   Filter,
   Plus,
   X,
-  Save
+  Save,
+  TrendingUp,
+  Target
 } from 'lucide-react';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/theme-provider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Toaster } from "@/components/ui/toaster";
+import { ShimmerButton } from "@/components/magicui/shimmer-button";
 
 interface Message {
   id: number;
@@ -107,6 +111,37 @@ interface BOMCategory {
   percentageOfTotal: number;
 }
 
+interface EstimationResults {
+  bestCasePrice: number;
+  worstCasePrice: number;
+  materialsMin: number;
+  materialsMax: number;
+  marginApplied: number;
+  confidence: number;
+  laborBreakdown: {
+    technician: {
+      rate: number;
+      hours: { min: number; max: number };
+      cost: { min: number; max: number };
+    };
+    programmingEngineer: {
+      rate: number;
+      hours: { min: number; max: number };
+      cost: { min: number; max: number };
+    };
+  };
+  materialsBreakdown: {
+    totalCost: { min: number; max: number };
+    categories: Array<{
+      name: string;
+      description: string;
+      cost: number;
+      customer: number;
+    }>;
+  };
+  aiReasoning: string;
+}
+
 const getCategoryFromType = (fileType: string): Document['category'] => {
   const type = fileType.toLowerCase();
   if (type.includes('contract')) return 'contract';
@@ -160,6 +195,28 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     modelNumber: '',
     notes: '',
     margin: 35
+  });
+
+  // AI Estimation States
+  const [activeEstimationTab, setActiveEstimationTab] = useState('Overview');
+  const [activeEstimationSubTab, setActiveEstimationSubTab] = useState<'Analysis' | 'Materials' | 'AISuggestions' | 'Context' | 'Discussion' | 'ValueEngineering' | 'Labor'>('Analysis');
+  const [laborTypes, setLaborTypes] = useState([
+    { id: '1', name: 'Programming Engineer', rate: 130, hoursAdjustment: 50 }
+  ]);
+  const [pricingConfig, setPricingConfig] = useState({
+    type: 'Margin',
+    percentage: 35,
+    applyTo: 'Materials Only',
+    customAdjustment: 0,
+    adjustmentDescription: ''
+  });
+  const [additionalContext, setAdditionalContext] = useState('');
+  const [estimationResults, setEstimationResults] = useState<EstimationResults | null>(null);
+  const [isGeneratingEstimation, setIsGeneratingEstimation] = useState(false);
+  const [newLaborType, setNewLaborType] = useState({
+    name: '',
+    rate: 0,
+    hoursAdjustment: 0
   });
 
   // Load project data from session storage or use default values
@@ -1080,6 +1137,110 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       title: "Image Removed",
       description: "Project image has been removed."
     });
+  };
+
+  // AI Estimation Functions
+  const handleAddLaborType = () => {
+    if (!newLaborType.name || newLaborType.rate <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Missing Information",
+        description: "Please fill in the labor type name and hourly rate."
+      });
+      return;
+    }
+
+    const laborType = {
+      id: Date.now().toString(),
+      name: newLaborType.name,
+      rate: newLaborType.rate,
+      hoursAdjustment: newLaborType.hoursAdjustment
+    };
+
+    setLaborTypes(prev => [...prev, laborType]);
+    setNewLaborType({ name: '', rate: 0, hoursAdjustment: 0 });
+    
+    toast({
+      title: "Success",
+      description: "Labor type added successfully"
+    });
+  };
+
+  const handleDeleteLaborType = (id: string) => {
+    setLaborTypes(prev => prev.filter(lt => lt.id !== id));
+    toast({
+      title: "Success",
+      description: "Labor type removed successfully"
+    });
+  };
+
+  const handleSavePricingConfig = () => {
+    toast({
+      title: "Success",
+      description: "Pricing configuration saved successfully"
+    });
+  };
+
+  const generateAIEstimation = async () => {
+    setIsGeneratingEstimation(true);
+    
+    try {
+      // Simulate AI estimation generation
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const results: EstimationResults = {
+        bestCasePrice: 87401.94,
+        worstCasePrice: 103948.09,
+        materialsMin: 35686.60,
+        materialsMax: 41039.59,
+        marginApplied: 35,
+        confidence: 85,
+        laborBreakdown: {
+          technician: {
+            rate: 95,
+            hours: { min: 56, max: 87 },
+            cost: { min: 5560, max: 8515 }
+          },
+          programmingEngineer: {
+            rate: 130,
+            hours: { min: 120, max: 180 },
+            cost: { min: 15600, max: 23400 }
+          }
+        },
+        materialsBreakdown: {
+          totalCost: { min: 35686.60, max: 41039.59 },
+          categories: [
+            {
+              name: 'Test',
+              description: 'Test components from BOM',
+              cost: 1.00,
+              customer: 1.00
+            },
+            {
+              name: 'Hardware',
+              description: 'Hardware components from BOM',
+              cost: 200.00,
+              customer: 307.69
+            }
+          ]
+        },
+        aiReasoning: "BOM-first estimation using actual BOM data with confidence-based contingency. Materials: $35686.60-$41039.59 (from 22 BOM items + 15% contingency based on 85% confidence). Labor: Labor analysis for installing the 22 BOM items listed above considers the complexity of a multi-door access control system, the need for specialized programming and installation skills, and coordination with other trades."
+      };
+      
+      setEstimationResults(results);
+      toast({
+        title: "Success",
+        description: "AI estimation generated successfully"
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to generate AI estimation. Please try again."
+      });
+    } finally {
+      setIsGeneratingEstimation(false);
+    }
   };
 
   return (
@@ -2269,6 +2430,983 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                         </button>
                       </div>
                     )}
+                  </div>
+                )}
+             </div>
+           </div>
+         ) : activeSection === 'AI Estimation' ? (
+           /* AI Estimation Section */
+           <div className="flex-1 p-6 overflow-y-auto">
+             <div className="max-w-7xl mx-auto space-y-6">
+               {/* Header */}
+               <div className="flex items-center justify-between">
+                 <div>
+                   <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
+                     AI-powered cost estimation and labor management
+                   </h1>
+                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                     Comprehensive project estimation analysis
+                   </p>
+                 </div>
+                 
+                 {estimationResults && (
+                   <div className="flex items-center space-x-2">
+                     <span className="text-sm text-gray-500 dark:text-gray-400">Confidence:</span>
+                     <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-300 rounded text-sm font-medium">
+                       {estimationResults.confidence}%
+                     </span>
+                   </div>
+                 )}
+               </div>
+
+               {/* Main Tabs */}
+               <div className="flex space-x-4 border-b border-gray-200 dark:border-gray-700">
+                 {['Overview', 'AI Analysis', 'Labor Types', 'Pricing', 'Generate'].map((tab) => (
+                   <button
+                     key={tab}
+                     onClick={() => setActiveEstimationTab(tab)}
+                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                       activeEstimationTab === tab
+                         ? 'border-black dark:border-white text-black dark:text-white'
+                         : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                     }`}
+                   >
+                     {tab}
+                   </button>
+                 ))}
+               </div>
+
+               {/* Overview Tab */}
+               {activeEstimationTab === 'Overview' && estimationResults && (
+                 <div className="space-y-6">
+                   {/* Summary Cards */}
+                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                     <div className="bg-green-100 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg p-4">
+                       <div className="flex items-center space-x-2">
+                         <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                           <span className="text-white text-sm font-bold">↑</span>
+                         </div>
+                         <div>
+                           <p className="text-sm text-green-700 dark:text-green-300">Best Case Price</p>
+                           <p className="text-xl font-semibold text-green-800 dark:text-green-200">
+                             {formatCurrency(estimationResults.bestCasePrice)}
+                           </p>
+                         </div>
+                       </div>
+                     </div>
+                     
+                     <div className="bg-orange-100 dark:bg-orange-900 border border-orange-200 dark:border-orange-700 rounded-lg p-4">
+                       <div className="flex items-center space-x-2">
+                         <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                           <span className="text-white text-sm font-bold">↑</span>
+                         </div>
+                         <div>
+                           <p className="text-sm text-orange-700 dark:text-orange-300">Worst Case Price</p>
+                           <p className="text-xl font-semibold text-orange-800 dark:text-orange-200">
+                             {formatCurrency(estimationResults.worstCasePrice)}
+                           </p>
+                         </div>
+                       </div>
+                     </div>
+                     
+                     <div className="bg-blue-100 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                       <div className="flex items-center space-x-2">
+                         <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                           <span className="text-white text-sm font-bold">📊</span>
+                         </div>
+                         <div>
+                           <p className="text-sm text-blue-700 dark:text-blue-300">Materials (Min)</p>
+                           <p className="text-xl font-semibold text-blue-800 dark:text-blue-200">
+                             {formatCurrency(estimationResults.materialsMin)}
+                           </p>
+                         </div>
+                       </div>
+                     </div>
+                     
+                     <div className="bg-purple-100 dark:bg-purple-900 border border-purple-200 dark:border-purple-700 rounded-lg p-4">
+                       <div className="flex items-center space-x-2">
+                         <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                           <span className="text-white text-sm font-bold">$</span>
+                         </div>
+                         <div>
+                           <p className="text-sm text-purple-700 dark:text-purple-300">Margin Applied</p>
+                           <p className="text-xl font-semibold text-purple-800 dark:text-purple-200">
+                             {estimationResults.marginApplied}%
+                           </p>
+                         </div>
+                       </div>
+                     </div>
+                   </div>
+
+                   {/* Sub Tabs */}
+                   <div className="flex space-x-4 border-b border-gray-200 dark:border-gray-700">
+                     {['Analysis', 'Materials', 'AI Suggestions', 'Context', 'Discussion', 'Value Engineering', 'Labor'].map((tab) => (
+                       <button
+                         key={tab}
+                         onClick={() => setActiveEstimationSubTab(tab)}
+                         className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                           activeEstimationSubTab === tab
+                             ? 'border-black dark:border-white text-black dark:text-white'
+                             : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                         }`}
+                       >
+                         {tab}
+                       </button>
+                     ))}
+                   </div>
+
+                   {/* Analysis Content */}
+                   {activeEstimationSubTab === 'Analysis' && (
+                     <div className="space-y-6">
+                       <div className="flex items-center justify-between">
+                         <h4 className="text-lg font-semibold text-gray-900 dark:text-white">AI Reasoning & Analysis</h4>
+                       </div>
+                       
+                       <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                         <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                           BOM-first estimation using actual BOM data with confidence-based contingency. Materials: ${estimationResults.materialsMin.toLocaleString()}-${estimationResults.materialsMax.toLocaleString()} (from {estimationResults.materialsBreakdown.categories.length} BOM items + 15% contingency based on {estimationResults.confidence}% confidence). Labor: Labor analysis for installing the {estimationResults.materialsBreakdown.categories.length} BOM items listed above considers the complexity of a multi-door access control system, the technical requirements for integration, and industry-standard installation times. The estimation includes programming time, testing, and commissioning activities. Margin applied reflects market conditions and project complexity while maintaining competitive positioning.
+                         </p>
+                       </div>
+                     </div>
+                   )}
+
+                   {activeEstimationSubTab === 'Materials' && (
+                     <div className="space-y-6">
+                       <div className="flex items-center justify-between">
+                         <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Materials Breakdown & Analysis</h4>
+                       </div>
+                       
+                       <div className="space-y-4">
+                         {estimationResults.materialsBreakdown.categories.map((category, index) => (
+                           <div key={index} className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                             <div className="flex justify-between items-start">
+                               <div>
+                                 <h5 className="font-medium text-gray-900 dark:text-white">{category.name}</h5>
+                                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{category.description}</p>
+                               </div>
+                               <div className="text-right">
+                                 <p className="text-sm text-gray-500 dark:text-gray-400">Cost: {formatCurrency(category.cost)}</p>
+                                 <p className="text-sm text-gray-500 dark:text-gray-400">Customer Price: {formatCurrency(category.customer)}</p>
+                               </div>
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     </div>
+                   )}
+
+                   {activeEstimationSubTab === 'AISuggestions' && (
+                     <div className="space-y-6">
+                       <div className="flex items-center justify-between">
+                         <h4 className="text-lg font-semibold text-gray-900 dark:text-white">+ AI Material Suggestions</h4>
+                         <ShimmerButton
+                           onClick={() => {}}
+                           className="bg-blue-600 hover:bg-blue-700 text-white"
+                         >
+                           Generate Suggestions
+                         </ShimmerButton>
+                       </div>
+                       
+                       <p className="text-sm text-gray-600 dark:text-gray-400">
+                         AI analyzes vendor quotes to suggest materials that may be missing from your BOM. Accept or dismiss suggestions as needed.
+                       </p>
+                       
+                       <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                         <div className="flex justify-between items-start">
+                           <div>
+                             <h5 className="font-medium text-gray-900 dark:text-white">Access Control Cards</h5>
+                             <div className="flex items-center space-x-2 mt-2">
+                               <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded">Materials</span>
+                               <span className="text-sm text-gray-500 dark:text-gray-400">Qty: 100.000 EA</span>
+                               <span className="text-sm text-green-600 dark:text-green-400 font-medium">$15.00 each</span>
+                               <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 text-xs rounded">95% confidence</span>
+                             </div>
+                           </div>
+                           <div className="flex space-x-2">
+                             <button className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded">✓ Accept</button>
+                             <button className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded">X Dismiss</button>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   )}
+
+                   {activeEstimationSubTab === 'Context' && (
+                     <div className="space-y-6">
+                       <div className="flex items-center justify-between">
+                         <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Project Context</h4>
+                         <ShimmerButton
+                           onClick={() => {}}
+                           className="bg-blue-600 hover:bg-blue-700 text-white"
+                         >
+                           + Add Context
+                         </ShimmerButton>
+                       </div>
+                       
+                       <p className="text-sm text-gray-600 dark:text-gray-400">
+                         Provide additional project understanding to improve AI estimation accuracy.
+                       </p>
+                       
+                       <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                         <div className="flex justify-between items-start">
+                           <div className="flex-1">
+                             <div className="flex items-center space-x-2 mb-2">
+                               <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 text-xs rounded">medium</span>
+                             </div>
+                             <h5 className="font-medium text-gray-900 dark:text-white">Testing Context Suggestions</h5>
+                             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                               Need dedicated wireless access points and network monitoring equipment for reliable system connectivity and troubleshooting capabilities.
+                             </p>
+                           </div>
+                           <div className="flex space-x-2 ml-4">
+                             <button className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                               <Edit3 className="w-4 h-4" />
+                             </button>
+                             <button className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400">
+                               <Trash2 className="w-4 h-4" />
+                             </button>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   )}
+
+                   {activeEstimationSubTab === 'Discussion' && (
+                     <div className="space-y-6">
+                       <div className="flex items-center justify-between">
+                         <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Customer Discussion Points</h4>
+                       </div>
+                       
+                       <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                         <div className="flex justify-between items-start">
+                           <div className="flex-1">
+                             <div className="flex items-center space-x-2 mb-2">
+                               <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs rounded">Installation</span>
+                               <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 text-xs rounded">high priority</span>
+                             </div>
+                             <h5 className="font-medium text-gray-900 dark:text-white">
+                               How will the installation be coordinated with other ongoing construction activities at the site?
+                             </h5>
+                             <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                               <strong>Impact:</strong> Coordination is crucial to avoid delays and ensure smooth installation without interference from other trades.
+                             </p>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   )}
+
+                   {activeEstimationSubTab === 'ValueEngineering' && (
+                     <div className="space-y-6">
+                       <div className="flex items-center justify-between">
+                         <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Value Engineering Opportunities</h4>
+                       </div>
+                       
+                       <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                         <div className="flex justify-between items-start">
+                           <div className="flex-1">
+                             <div className="flex items-center space-x-2 mb-2">
+                               <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 text-xs rounded">Cost Savings</span>
+                               <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 text-xs rounded">medium impact</span>
+                             </div>
+                             <h5 className="font-medium text-gray-900 dark:text-white">
+                               Consider using remote programming and diagnostics to reduce on-site labor time.
+                             </h5>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   )}
+
+                   {activeEstimationSubTab === 'Labor' && (
+                     <div className="space-y-6">
+                       <div className="flex items-center justify-between">
+                         <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Labor Analysis</h4>
+                       </div>
+                       
+                       <div className="space-y-4">
+                         {Object.entries(estimationResults.laborBreakdown).map(([key, labor]) => (
+                           <div key={key} className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                             <div className="flex justify-between items-start">
+                               <div>
+                                 <h5 className="font-medium text-gray-900 dark:text-white capitalize">
+                                   {key.replace(/([A-Z])/g, ' $1')}
+                                 </h5>
+                                 <div className="grid grid-cols-3 gap-4 text-sm mt-2">
+                                   <div>
+                                     <p className="text-gray-500 dark:text-gray-400">Rate</p>
+                                     <p className="font-medium text-gray-900 dark:text-white">
+                                       {formatCurrency(labor.rate)}/hr
+                                     </p>
+                                   </div>
+                                   <div>
+                                     <p className="text-gray-500 dark:text-gray-400">Hours</p>
+                                     <p className="font-medium text-gray-900 dark:text-white">
+                                       {labor.hours.min} - {labor.hours.max}
+                                     </p>
+                                   </div>
+                                   <div>
+                                     <p className="text-gray-500 dark:text-gray-400">Cost</p>
+                                     <p className="font-medium text-gray-900 dark:text-white">
+                                       {formatCurrency(labor.cost.min)} - {formatCurrency(labor.cost.max)}
+                                     </p>
+                                   </div>
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     </div>
+                   )}
+                 </div>
+               )}
+
+               {/* AI Analysis Tab */}
+               {activeEstimationTab === 'AI Analysis' && (
+                 <div className="space-y-6">
+                   {/* AI Analysis Header */}
+                   <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                     <div className="flex items-center justify-between mb-4">
+                       <div className="flex items-center space-x-3">
+                         <Brain className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                         <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+                           AI Analysis
+                         </h3>
+                       </div>
+                       <div className="flex items-center space-x-2">
+                         <span className="text-sm text-gray-500 dark:text-gray-400">Last updated:</span>
+                         <span className="text-sm font-medium text-gray-900 dark:text-white">
+                           {estimationResults ? new Date().toLocaleDateString() : 'Not available'}
+                         </span>
+                       </div>
+                     </div>
+                     
+                     <div className="space-y-6">
+                       {/* Analysis Sub-sections */}
+                       <div className="flex space-x-1 border-b border-gray-200 dark:border-gray-700">
+                         <button
+                           onClick={() => setActiveEstimationSubTab('Analysis')}
+                           className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-all ${
+                             activeEstimationSubTab === 'Analysis'
+                               ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                               : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                           }`}
+                         >
+                           Analysis
+                         </button>
+                         <button
+                           onClick={() => setActiveEstimationSubTab('Materials')}
+                           className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-all ${
+                             activeEstimationSubTab === 'Materials'
+                               ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                               : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                           }`}
+                         >
+                           $ Materials
+                         </button>
+                         <button
+                           onClick={() => setActiveEstimationSubTab('AISuggestions')}
+                           className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-all ${
+                             activeEstimationSubTab === 'AISuggestions'
+                               ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                               : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                           }`}
+                         >
+                           AI Suggestions
+                         </button>
+                         <button
+                           onClick={() => setActiveEstimationSubTab('Context')}
+                           className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-all ${
+                             activeEstimationSubTab === 'Context'
+                               ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                               : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                           }`}
+                         >
+                           Context
+                         </button>
+                         <button
+                           onClick={() => setActiveEstimationSubTab('Discussion')}
+                           className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-all ${
+                             activeEstimationSubTab === 'Discussion'
+                               ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                               : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                           }`}
+                         >
+                           Discussion
+                         </button>
+                         <button
+                           onClick={() => setActiveEstimationSubTab('ValueEngineering')}
+                           className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-all ${
+                             activeEstimationSubTab === 'ValueEngineering'
+                               ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                               : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                           }`}
+                         >
+                           Value Engineering
+                         </button>
+                         <button
+                           onClick={() => setActiveEstimationSubTab('Labor')}
+                           className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-all ${
+                             activeEstimationSubTab === 'Labor'
+                               ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                               : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                           }`}
+                         >
+                           Labor
+                         </button>
+                       </div>
+
+                       {/* Sub-section Content */}
+                       <div className="bg-white dark:bg-gray-800 rounded-lg p-6">
+                         {activeEstimationSubTab === 'Analysis' && (
+                           <div className="space-y-6">
+                             <div className="flex items-center justify-between">
+                               <h4 className="text-lg font-semibold text-gray-900 dark:text-white">AI Reasoning & Analysis</h4>
+                             </div>
+                             
+                             {!estimationResults ? (
+                               <div className="text-center py-8">
+                                 <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                 <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                                   No Analysis Available
+                                 </h4>
+                                 <p className="text-gray-500 dark:text-gray-400 mb-4">
+                                   Generate an AI estimation first to view detailed analysis.
+                                 </p>
+                                 <div className="flex justify-center">
+                                   <ShimmerButton
+                                     onClick={() => setActiveEstimationTab('Generate')}
+                                     className="bg-blue-600 hover:bg-blue-700 text-white"
+                                   >
+                                     Generate Estimation
+                                   </ShimmerButton>
+                                 </div>
+                               </div>
+                             ) : (
+                               <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                                 <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                                   BOM-first estimation using actual BOM data with confidence-based contingency. Materials: ${estimationResults.materialsMin.toLocaleString()}-${estimationResults.materialsMax.toLocaleString()} (from {estimationResults.materialsBreakdown.categories.length} BOM items + 15% contingency based on {estimationResults.confidence}% confidence). Labor: Labor analysis for installing the {estimationResults.materialsBreakdown.categories.length} BOM items listed above considers the complexity of a multi-door access control system, the technical requirements for integration, and industry-standard installation times. The estimation includes programming time, testing, and commissioning activities. Margin applied reflects market conditions and project complexity while maintaining competitive positioning.
+                                 </p>
+                               </div>
+                             )}
+                           </div>
+                         )}
+
+                         {activeEstimationSubTab === 'Materials' && (
+                           <div className="space-y-6">
+                             <div className="flex items-center justify-between">
+                               <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Materials Breakdown & Analysis</h4>
+                             </div>
+                             
+                             {!estimationResults ? (
+                               <div className="text-center py-8">
+                                 <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                 <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                                   No Materials Data Available
+                                 </h4>
+                                 <p className="text-gray-500 dark:text-gray-400 mb-4">
+                                   Generate an AI estimation first to view materials breakdown.
+                                 </p>
+                                 <div className="flex justify-center">
+                                   <ShimmerButton
+                                     onClick={() => setActiveEstimationTab('Generate')}
+                                     className="bg-blue-600 hover:bg-blue-700 text-white"
+                                   >
+                                     Generate Estimation
+                                   </ShimmerButton>
+                                 </div>
+                               </div>
+                             ) : (
+                               <div className="space-y-4">
+                                 {estimationResults.materialsBreakdown.categories.map((category, index) => (
+                                   <div key={index} className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                                     <div className="flex justify-between items-start">
+                                       <div>
+                                         <h5 className="font-medium text-gray-900 dark:text-white">{category.name}</h5>
+                                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{category.description}</p>
+                                       </div>
+                                       <div className="text-right">
+                                         <p className="text-sm text-gray-500 dark:text-gray-400">Cost: {formatCurrency(category.cost)}</p>
+                                         <p className="text-sm text-gray-500 dark:text-gray-400">Customer Price: {formatCurrency(category.customer)}</p>
+                                       </div>
+                                     </div>
+                                   </div>
+                                 ))}
+                               </div>
+                             )}
+                           </div>
+                         )}
+
+                         {activeEstimationSubTab === 'AISuggestions' && (
+                           <div className="space-y-6">
+                             <div className="flex items-center justify-between">
+                               <h4 className="text-lg font-semibold text-gray-900 dark:text-white">+ AI Material Suggestions</h4>
+                               <ShimmerButton
+                                 onClick={() => {}}
+                                 className="bg-blue-600 hover:bg-blue-700 text-white"
+                               >
+                                 Generate Suggestions
+                               </ShimmerButton>
+                             </div>
+                             
+                             <p className="text-sm text-gray-600 dark:text-gray-400">
+                               AI analyzes vendor quotes to suggest materials that may be missing from your BOM. Accept or dismiss suggestions as needed.
+                             </p>
+                             
+                             <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                               <div className="flex justify-between items-start">
+                                 <div>
+                                   <h5 className="font-medium text-gray-900 dark:text-white">Access Control Cards</h5>
+                                   <div className="flex items-center space-x-2 mt-2">
+                                     <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded">Materials</span>
+                                     <span className="text-sm text-gray-500 dark:text-gray-400">Qty: 100.000 EA</span>
+                                     <span className="text-sm text-green-600 dark:text-green-400 font-medium">$15.00 each</span>
+                                     <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 text-xs rounded">95% confidence</span>
+                                   </div>
+                                 </div>
+                                 <div className="flex space-x-2">
+                                   <button className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded">✓ Accept</button>
+                                   <button className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded">X Dismiss</button>
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         )}
+
+                         {activeEstimationSubTab === 'Context' && (
+                           <div className="space-y-6">
+                             <div className="flex items-center justify-between">
+                               <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Project Context</h4>
+                               <ShimmerButton
+                                 onClick={() => {}}
+                                 className="bg-blue-600 hover:bg-blue-700 text-white"
+                               >
+                                 + Add Context
+                               </ShimmerButton>
+                             </div>
+                             
+                             <p className="text-sm text-gray-600 dark:text-gray-400">
+                               Provide additional project understanding to improve AI estimation accuracy.
+                             </p>
+                             
+                             <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                               <div className="flex justify-between items-start">
+                                 <div className="flex-1">
+                                   <div className="flex items-center space-x-2 mb-2">
+                                     <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 text-xs rounded">medium</span>
+                                   </div>
+                                   <h5 className="font-medium text-gray-900 dark:text-white">Testing Context Suggestions</h5>
+                                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                     Need dedicated wireless access points and network monitoring equipment for reliable system connectivity and troubleshooting capabilities.
+                                   </p>
+                                 </div>
+                                 <div className="flex space-x-2 ml-4">
+                                   <button className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                                     <Edit3 className="w-4 h-4" />
+                                   </button>
+                                   <button className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400">
+                                     <Trash2 className="w-4 h-4" />
+                                   </button>
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         )}
+
+                         {activeEstimationSubTab === 'Discussion' && (
+                           <div className="space-y-6">
+                             <div className="flex items-center justify-between">
+                               <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Customer Discussion Points</h4>
+                             </div>
+                             
+                             <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                               <div className="flex justify-between items-start">
+                                 <div className="flex-1">
+                                   <div className="flex items-center space-x-2 mb-2">
+                                     <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs rounded">Installation</span>
+                                     <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 text-xs rounded">high priority</span>
+                                   </div>
+                                   <h5 className="font-medium text-gray-900 dark:text-white">
+                                     How will the installation be coordinated with other ongoing construction activities at the site?
+                                   </h5>
+                                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                                     <strong>Impact:</strong> Coordination is crucial to avoid delays and ensure smooth installation without interference from other trades.
+                                   </p>
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         )}
+
+                         {activeEstimationSubTab === 'ValueEngineering' && (
+                           <div className="space-y-6">
+                             <div className="flex items-center justify-between">
+                               <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Value Engineering Opportunities</h4>
+                             </div>
+                             
+                             <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                               <div className="flex justify-between items-start">
+                                 <div className="flex-1">
+                                   <div className="flex items-center space-x-2 mb-2">
+                                     <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 text-xs rounded">Cost Savings</span>
+                                     <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 text-xs rounded">medium impact</span>
+                                   </div>
+                                   <h5 className="font-medium text-gray-900 dark:text-white">
+                                     Consider using remote programming and diagnostics to reduce on-site labor time.
+                                   </h5>
+                                 </div>
+                               </div>
+                             </div>
+                           </div>
+                         )}
+
+                         {activeEstimationSubTab === 'Labor' && (
+                           <div className="space-y-6">
+                             <div className="flex items-center justify-between">
+                               <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Labor Analysis</h4>
+                             </div>
+                             
+                             {!estimationResults ? (
+                               <div className="text-center py-8">
+                                 <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                 <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                                   No Labor Data Available
+                                 </h4>
+                                 <p className="text-gray-500 dark:text-gray-400 mb-4">
+                                   Generate an AI estimation first to view labor analysis.
+                                 </p>
+                                 <div className="flex justify-center">
+                                   <ShimmerButton
+                                     onClick={() => setActiveEstimationTab('Generate')}
+                                     className="bg-blue-600 hover:bg-blue-700 text-white"
+                                   >
+                                     Generate Estimation
+                                   </ShimmerButton>
+                                 </div>
+                               </div>
+                             ) : (
+                               <div className="space-y-4">
+                                 {Object.entries(estimationResults.laborBreakdown).map(([key, labor]) => (
+                                   <div key={key} className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                                     <div className="flex justify-between items-start">
+                                       <div>
+                                         <h5 className="font-medium text-gray-900 dark:text-white capitalize">
+                                           {key.replace(/([A-Z])/g, ' $1')}
+                                         </h5>
+                                         <div className="grid grid-cols-3 gap-4 text-sm mt-2">
+                                           <div>
+                                             <p className="text-gray-500 dark:text-gray-400">Rate</p>
+                                             <p className="font-medium text-gray-900 dark:text-white">
+                                               {formatCurrency(labor.rate)}/hr
+                                             </p>
+                                           </div>
+                                           <div>
+                                             <p className="text-gray-500 dark:text-gray-400">Hours</p>
+                                             <p className="font-medium text-gray-900 dark:text-white">
+                                               {labor.hours.min} - {labor.hours.max}
+                                             </p>
+                                           </div>
+                                           <div>
+                                             <p className="text-gray-500 dark:text-gray-400">Cost</p>
+                                             <p className="font-medium text-gray-900 dark:text-white">
+                                               {formatCurrency(labor.cost.min)} - {formatCurrency(labor.cost.max)}
+                                             </p>
+                                           </div>
+                                         </div>
+                                       </div>
+                                     </div>
+                                   </div>
+                                 ))}
+                               </div>
+                             )}
+                           </div>
+                         )}
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               )}
+
+               {/* Labor Types Tab */}
+               {activeEstimationTab === 'Labor Types' && (
+                 <div className="space-y-6">
+                   {/* Add Labor Type */}
+                   <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                       Add Labor Type
+                     </h3>
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                       <div>
+                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                           Labor Type Name
+                         </label>
+                         <input
+                           type="text"
+                           value={newLaborType.name}
+                           onChange={(e) => setNewLaborType(prev => ({ ...prev, name: e.target.value }))}
+                           placeholder="e.g., Senior Technician"
+                           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                         />
+                       </div>
+                       <div>
+                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                           Hourly Rate ($)
+                         </label>
+                         <input
+                           type="number"
+                           value={newLaborType.rate}
+                           onChange={(e) => setNewLaborType(prev => ({ ...prev, rate: parseFloat(e.target.value) || 0 }))}
+                           min="0"
+                           step="0.01"
+                           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                         />
+                       </div>
+                       <div>
+                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                           Labor Hours Adjustment (%)
+                         </label>
+                         <input
+                           type="number"
+                           value={newLaborType.hoursAdjustment}
+                           onChange={(e) => setNewLaborType(prev => ({ ...prev, hoursAdjustment: parseFloat(e.target.value) || 0 }))}
+                           placeholder="Enter % increase (e.g., 50 for 50% n"
+                           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                         />
+                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                           Leave blank for standard AI estimation
+                         </p>
+                       </div>
+                     </div>
+                     <div className="mt-4">
+                       <ShimmerButton
+                         onClick={handleAddLaborType}
+                         className="bg-blue-600 hover:bg-blue-700 text-white"
+                       >
+                         + Add Labor Type
+                       </ShimmerButton>
+                     </div>
+                   </div>
+
+                   {/* Configured Labor Types */}
+                   <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                       Configured Labor Types
+                     </h3>
+                     <div className="space-y-4">
+                       {laborTypes.map((laborType) => (
+                         <div key={laborType.id} className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-600 rounded-lg">
+                           <div>
+                             <h4 className="font-medium text-gray-900 dark:text-white">{laborType.name}</h4>
+                             <p className="text-sm text-gray-500 dark:text-gray-400">
+                               {formatCurrency(laborType.rate)}/hour
+                             </p>
+                             {laborType.hoursAdjustment > 0 && (
+                               <p className="text-sm text-gray-500 dark:text-gray-400">
+                                 Labor hours: {laborType.hoursAdjustment}% increase
+                               </p>
+                             )}
+                           </div>
+                           <div className="flex items-center space-x-2">
+                             <button className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                               <Edit3 className="w-4 h-4" />
+                             </button>
+                             <button 
+                               onClick={() => handleDeleteLaborType(laborType.id)}
+                               className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                             >
+                               <Trash2 className="w-4 h-4" />
+                             </button>
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+                   </div>
+                 </div>
+               )}
+
+               {/* Pricing Tab */}
+               {activeEstimationTab === 'Pricing' && (
+                 <div className="space-y-6">
+                   <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                       Pricing Configuration
+                     </h3>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                       <div>
+                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                           Pricing Type
+                         </label>
+                         <Select 
+                           value={pricingConfig.type} 
+                           onValueChange={(value) => setPricingConfig(prev => ({ ...prev, type: value }))}
+                         >
+                           <SelectTrigger className="w-full">
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="Margin">Margin</SelectItem>
+                             <SelectItem value="Markup">Markup</SelectItem>
+                           </SelectContent>
+                         </Select>
+                       </div>
+                       <div>
+                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                           Percentage (%)
+                         </label>
+                         <input
+                           type="number"
+                           value={pricingConfig.percentage}
+                           onChange={(e) => setPricingConfig(prev => ({ ...prev, percentage: parseFloat(e.target.value) || 0 }))}
+                           min="0"
+                           step="0.01"
+                           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                         />
+                       </div>
+                       <div>
+                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                           Apply To
+                         </label>
+                         <Select 
+                           value={pricingConfig.applyTo} 
+                           onValueChange={(value) => setPricingConfig(prev => ({ ...prev, applyTo: value }))}
+                         >
+                           <SelectTrigger className="w-full">
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="Materials Only">Materials Only</SelectItem>
+                             <SelectItem value="Labor Only">Labor Only</SelectItem>
+                             <SelectItem value="Materials and Labor">Materials and Labor</SelectItem>
+                           </SelectContent>
+                         </Select>
+                       </div>
+                       <div>
+                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                           Custom Adjustment ($)
+                         </label>
+                         <input
+                           type="number"
+                           value={pricingConfig.customAdjustment}
+                           onChange={(e) => setPricingConfig(prev => ({ ...prev, customAdjustment: parseFloat(e.target.value) || 0 }))}
+                           min="0"
+                           step="0.01"
+                           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                         />
+                       </div>
+                       <div className="md:col-span-2">
+                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                           Adjustment Description
+                         </label>
+                         <input
+                           type="text"
+                           value={pricingConfig.adjustmentDescription}
+                           onChange={(e) => setPricingConfig(prev => ({ ...prev, adjustmentDescription: e.target.value }))}
+                           placeholder="e.g., Project complexity bonus"
+                           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                         />
+                       </div>
+                     </div>
+                     <div className="mt-6">
+                       <ShimmerButton
+                         onClick={handleSavePricingConfig}
+                         className="bg-green-600 hover:bg-green-700 text-white"
+                       >
+                         $ Save Pricing Configuration
+                       </ShimmerButton>
+                     </div>
+                   </div>
+                 </div>
+               )}
+
+               {/* Generate Tab */}
+               {activeEstimationTab === 'Generate' && (
+                 <div className="space-y-6">
+                   <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                       Generate AI Estimation
+                     </h3>
+                     <div className="space-y-4">
+                       <div>
+                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                           Additional Context (Optional)
+                         </label>
+                         <textarea
+                           value={additionalContext}
+                           onChange={(e) => setAdditionalContext(e.target.value)}
+                           placeholder="Provide any additional context for the estimation (e.g., special requirements, timeline constraints, complexity factors)"
+                           rows={4}
+                           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white resize-none"
+                         />
+                       </div>
+                       <div className="flex justify-center">
+                         <ShimmerButton
+                           onClick={generateAIEstimation}
+                           disabled={isGeneratingEstimation}
+                           className="bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                         >
+                           {isGeneratingEstimation ? (
+                             <>
+                               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                               Generating...
+                             </>
+                           ) : (
+                             <>
+                               <Brain className="w-4 h-4 mr-2" />
+                               Generate Estimation
+                             </>
+                           )}
+                         </ShimmerButton>
+                       </div>
+                     </div>
+                   </div>
+
+                   {/* How AI Estimation Works */}
+                   <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                     <div className="flex items-start space-x-3">
+                       <Info className="w-5 h-5 text-blue-500 mt-0.5" />
+                       <div>
+                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                           How AI Estimation Works
+                         </h3>
+                         <ul className="space-y-2 text-gray-700 dark:text-gray-300">
+                           <li className="flex items-start space-x-2">
+                             <span className="text-blue-500 mt-1">•</span>
+                             <span>Analyzes project description and uploaded documents</span>
+                           </li>
+                           <li className="flex items-start space-x-2">
+                             <span className="text-blue-500 mt-1">•</span>
+                             <span>Uses configured labor types and hourly rates</span>
+                           </li>
+                           <li className="flex items-start space-x-2">
+                             <span className="text-blue-500 mt-1">•</span>
+                             <span>Applies your pricing configuration (markup/margin)</span>
+                           </li>
+                         </ul>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               )}
+
+               {!estimationResults && activeEstimationTab === 'Overview' && (
+                 <div className="text-center py-12">
+                   <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                   <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                     No AI Estimation Generated
+                   </h3>
+                   <p className="text-gray-500 dark:text-gray-400 mb-4">
+                     Generate an AI estimation to view comprehensive analysis and breakdowns.
+                   </p>
+                   <div className="flex justify-center">
+                     <ShimmerButton
+                       onClick={() => setActiveEstimationTab('Generate')}
+                       className="bg-purple-600 hover:bg-purple-700 text-white"
+                     >
+                       <Brain className="w-4 h-4 mr-2" />
+                       Generate AI Estimation
+                     </ShimmerButton>
+                   </div>
                   </div>
                 )}
              </div>
