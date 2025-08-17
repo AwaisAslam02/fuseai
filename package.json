@@ -14,6 +14,7 @@
     "@mui/system": "^7.2.0",
     "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-toast": "^1.2.14",
+    "@react-pdf/renderer": "^4.3.0",
     "@reverse-ui/react": "^1.0.39-alpha.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

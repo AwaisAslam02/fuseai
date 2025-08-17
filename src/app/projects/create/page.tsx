@@ -4,7 +4,10 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, X } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '@/components/theme-provider';
+import { useToast } from "@/hooks/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 import {
   Select,
   SelectContent,
@@ -53,6 +56,12 @@ interface Contact {
 }
 
 export default function CreateProjectPage() {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
+  const [isCreatingContact, setIsCreatingContact] = useState(false);
+
   const [formData, setFormData] = useState<ProjectForm>({
     name: '',
     status: 'Active',
@@ -182,11 +191,16 @@ export default function CreateProjectPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsCreatingProject(true);
     
     try {
       const token = localStorage.getItem('token');
       if (!token) {
-        alert('Authentication token not found');
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "Authentication token not found. Please log in again."
+        });
         return;
       }
 
@@ -210,8 +224,31 @@ export default function CreateProjectPage() {
 
       const data = await response.json();
       
+      // Debug: Log the response structure
+      console.log('Create project response:', data);
+      
       if (response.ok) {
-        alert('Project created successfully!');
+        // Check if project_id exists in the response (try different possible field names)
+        const projectId = data.project_id || data.projectId || data.id;
+        
+        if (!projectId) {
+          console.error('Project ID not found in response:', data);
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Project created but ID not received. Please refresh and try again."
+          });
+          return;
+        }
+
+        toast({
+          title: "Success",
+          description: "Project created successfully!"
+        });
+        
+        // Navigate to the project page
+        router.push(`/projects/${projectId}`);
+        
         // Reset form
         setFormData({
           name: '',
@@ -224,20 +261,35 @@ export default function CreateProjectPage() {
           contact_id: ''
         });
       } else {
-        alert(data.message || 'Failed to create project');
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: data.message || 'Failed to create project'
+        });
       }
     } catch (err) {
-      alert('Failed to create project. Please try again later.');
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to create project. Please try again later."
+      });
+    } finally {
+      setIsCreatingProject(false);
     }
   };
 
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsCreatingCustomer(true);
     
     try {
       const token = localStorage.getItem('token');
       if (!token) {
-        alert('Authentication token not found');
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "Authentication token not found. Please log in again."
+        });
         return;
       }
 
@@ -258,7 +310,10 @@ export default function CreateProjectPage() {
       const data = await response.json();
       
       if (response.ok) {
-        alert('Customer created successfully!');
+        toast({
+          title: "Success",
+          description: "Customer created successfully!"
+        });
         // Reset form
         setCustomerForm({
           companyName: '',
@@ -287,20 +342,35 @@ export default function CreateProjectPage() {
           }
         }
       } else {
-        alert(data.message || 'Failed to create customer');
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: data.message || 'Failed to create customer'
+        });
       }
     } catch (err) {
-      alert('Failed to create customer. Please try again later.');
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to create customer. Please try again later."
+      });
+    } finally {
+      setIsCreatingCustomer(false);
     }
   };
 
   const handleCreateContact = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsCreatingContact(true);
     
     try {
       const token = localStorage.getItem('token');
       if (!token) {
-        alert('Authentication token not found');
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "Authentication token not found. Please log in again."
+        });
         return;
       }
 
@@ -323,7 +393,10 @@ export default function CreateProjectPage() {
       const data = await response.json();
       
       if (response.ok) {
-        alert('Contact created successfully!');
+        toast({
+          title: "Success",
+          description: "Contact created successfully!"
+        });
         // Reset form
         setContactForm({
           firstName: '',
@@ -354,10 +427,20 @@ export default function CreateProjectPage() {
           }
         }
       } else {
-        alert(data.message || 'Failed to create contact');
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: data.message || 'Failed to create contact'
+        });
       }
     } catch (err) {
-      alert('Failed to create contact. Please try again later.');
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to create contact. Please try again later."
+      });
+    } finally {
+      setIsCreatingContact(false);
     }
   };
 
@@ -603,9 +686,17 @@ export default function CreateProjectPage() {
                </Link>
                <button
                  type="submit"
-                 className="px-3 py-2 bg-black hover:bg-gray-800 text-white rounded transition-colors text-sm font-medium"
+                 disabled={isCreatingProject}
+                 className="px-3 py-2 bg-black hover:bg-gray-800 text-white rounded transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                >
-                 <span>Create Project</span>
+                 {isCreatingProject ? (
+                   <>
+                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                     <span>Creating...</span>
+                   </>
+                 ) : (
+                   <span>Create Project</span>
+                 )}
                </button>
              </motion.div>
           </form>
@@ -709,9 +800,17 @@ export default function CreateProjectPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 transition-colors text-sm font-medium"
+                    disabled={isCreatingCustomer}
+                    className="px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                   >
-                    Create Customer
+                    {isCreatingCustomer ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Creating...</span>
+                      </>
+                    ) : (
+                      <span>Create Customer</span>
+                    )}
                   </button>
                 </div>
               </form>
@@ -858,9 +957,17 @@ export default function CreateProjectPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 transition-colors text-sm font-medium"
+                    disabled={isCreatingContact}
+                    className="px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                   >
-                    Create Contact
+                    {isCreatingContact ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Creating...</span>
+                      </>
+                    ) : (
+                      <span>Create Contact</span>
+                    )}
                   </button>
                 </div>
               </form>
@@ -868,6 +975,7 @@ export default function CreateProjectPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      <Toaster />
     </div>
   );
 } 

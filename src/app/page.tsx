@@ -32,7 +32,6 @@ import {
   FaShieldAlt 
 } from 'react-icons/fa';
 import { ThemeToggle } from '@/components/theme-provider';
-import Particles from '@/components/particles';
 import TextCycler from '@/components/text-cycler';
 import AIChat from '@/components/aichat';
 import AIChatWrapper from '@/components/ai-chat-wrapper';
@@ -97,12 +96,11 @@ export default function Home() {
   const { timeSaved, costSaved } = calculateROI();
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900">
+    <div className="min-h-screen bg-transparent">
       <Navbar />
       
       {/* Hero Section - Divided into 2 Cards */}
-      <section className="py-16 sm:py-12 lg:py-16 bg-white dark:bg-gray-900 relative overflow-hidden">
-        <Particles />
+      <section className="py-16 sm:py-12 lg:py-16 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="flex flex-col lg:grid lg:grid-cols-2 gap-6 lg:gap-8 items-center">
             
@@ -213,7 +211,7 @@ export default function Home() {
       </section>
 
       {/* Features Section */}
-      <section id="features" className="py-12 sm:py-16 lg:py-20 bg-white dark:bg-gray-900">
+      <section id="features" className="py-12 sm:py-16 lg:py-20 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12 sm:mb-16">
             <motion.h2
@@ -241,7 +239,7 @@ export default function Home() {
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: index * 0.1 }}
-                className="bg-gray-50 dark:bg-gray-800 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow"
+                className="bg-white/90 dark:bg-gray-800/90 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow backdrop-blur-sm"
               >
                 <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center mb-4">
                   <feature.icon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
@@ -259,7 +257,7 @@ export default function Home() {
       </section>
 
       {/* Industries Section */}
-      <section id="industries" className="py-12 sm:py-16 lg:py-20 bg-white dark:bg-gray-900">
+      <section id="industries" className="py-12 sm:py-16 lg:py-20 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12 sm:mb-16">
             <motion.h2
@@ -347,7 +345,7 @@ export default function Home() {
       </section>
 
       {/* Trust & Credibility Section */}
-      <section className="py-12 sm:py-16 lg:py-20 bg-white dark:bg-gray-900">
+      <section className="py-12 sm:py-16 lg:py-20 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12 sm:mb-16">
             <motion.h2
@@ -373,7 +371,7 @@ export default function Home() {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
-              className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm text-center"
+              className="bg-white/90 dark:bg-gray-900/90 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm text-center backdrop-blur-sm"
             >
               <Shield className="w-12 h-12 text-green-600 dark:text-green-400 mx-auto mb-4" />
               <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-3">
@@ -388,7 +386,7 @@ export default function Home() {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.2 }}
-              className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm text-center"
+              className="bg-white/90 dark:bg-gray-900/90 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm text-center backdrop-blur-sm"
             >
               <Clock className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-4" />
               <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-3">
@@ -403,7 +401,7 @@ export default function Home() {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4 }}
-              className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm text-center sm:col-span-2 lg:col-span-1"
+              className="bg-white/90 dark:bg-gray-900/90 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm text-center sm:col-span-2 lg:col-span-1 backdrop-blur-sm"
             >
               <DollarSign className="w-12 h-12 text-purple-600 dark:text-purple-400 mx-auto mb-4" />
               <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-3">
@@ -418,7 +416,7 @@ export default function Home() {
       </section>
 
       {/* ROI Calculator Section */}
-      <section className="py-12 sm:py-16 lg:py-20 bg-white dark:bg-gray-900">
+      <section className="py-12 sm:py-16 lg:py-20 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12 sm:mb-16">
             <motion.h2
@@ -443,7 +441,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.4 }}
-            className="bg-gray-50 dark:bg-gray-800 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700"
+            className="bg-gray-50/90 dark:bg-gray-800/90 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 backdrop-blur-sm"
           >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
               <div>
@@ -495,7 +493,7 @@ export default function Home() {
       </section>
 
       {/* Pricing Section */}
-      <section id="pricing" className="py-12 sm:py-16 lg:py-20 bg-white dark:bg-gray-900">
+      <section id="pricing" className="py-12 sm:py-16 lg:py-20 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12 sm:mb-16">
             <motion.h2
@@ -522,7 +520,7 @@ export default function Home() {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
-              className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow flex flex-col"
+              className="bg-white/90 dark:bg-gray-900/90 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow flex flex-col backdrop-blur-sm"
             >
               <div className="text-center mb-6">
                 <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-2">Starter</h3>
@@ -565,7 +563,7 @@ export default function Home() {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.2 }}
-              className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-lg border-2 border-blue-500 shadow-lg relative flex flex-col"
+              className="bg-white/90 dark:bg-gray-900/90 p-6 sm:p-8 rounded-lg border-2 border-blue-500 shadow-lg relative flex flex-col backdrop-blur-sm"
             >
               <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
                 <span className="bg-blue-500 text-white px-4 py-1 rounded-full text-xs font-semibold">Most Popular</span>
@@ -621,7 +619,7 @@ export default function Home() {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4 }}
-              className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow flex flex-col"
+              className="bg-white/90 dark:bg-gray-900/90 p-6 sm:p-8 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow flex flex-col backdrop-blur-sm"
             >
               <div className="text-center mb-6">
                 <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-2">Enterprise</h3>

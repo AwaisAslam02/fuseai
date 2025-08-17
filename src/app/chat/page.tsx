@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Send, Plus, MessageSquare, ArrowLeft, Bot, User, Settings, Trash2, Paperclip, ChevronDown, LogOut, Menu, X } from 'lucide-react';
+import { Send, Plus, MessageSquare, ArrowLeft, Bot, User, Settings, Trash2, Paperclip, ChevronDown, LogOut, Menu, X, Copy, Check } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
@@ -51,6 +51,7 @@ export default function ChatPage() {
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
   const [isClearingChat, setIsClearingChat] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
@@ -684,27 +685,98 @@ export default function ChatPage() {
     router.push('/');
   };
 
+  // Function to format message content with bold text
+  const formatMessageContent = (content: string) => {
+    // Split content by ** markers and create formatted elements
+    const parts = content.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        // Remove ** markers and make bold
+        const boldText = part.slice(2, -2);
+        return <strong key={index}>{boldText}</strong>;
+      }
+      return part;
+    });
+  };
+
+  // Function to copy message content
+  const copyMessageContent = async (content: string) => {
+    try {
+      // Remove ** markers for plain text copy
+      const plainText = content.replace(/\*\*(.*?)\*\*/g, '$1');
+      await navigator.clipboard.writeText(plainText);
+      
+      toast({
+        title: "Copied!",
+        description: "Message copied to clipboard"
+      });
+    } catch (error) {
+      console.error('Failed to copy message:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to copy message"
+      });
+    }
+  };
+
+  // Function to handle copy button click
+  const handleCopyClick = (messageId: string, content: string) => {
+    copyMessageContent(content);
+    setCopiedMessageId(messageId);
+    // Reset copied state after 2 seconds
+    setTimeout(() => {
+      setCopiedMessageId(null);
+    }, 2000);
+  };
+
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
       <Toaster />
       
       {/* Full Screen Loading Overlay */}
       {isLoadingMessages && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-8 shadow-2xl">
-            <div className="flex flex-col items-center space-y-4">
-              {/* Donut Loader */}
-              <div className="relative w-16 h-16">
-                <div className="absolute inset-0 border-4 border-gray-200 dark:border-gray-600 rounded-full"></div>
-                <div className="absolute inset-0 border-4 border-transparent border-t-gray-900 dark:border-t-white rounded-full animate-spin"></div>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center">
+          <div className="bg-gradient-to-br from-white via-gray-50 to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 rounded-2xl p-8 shadow-2xl border border-gray-200 dark:border-gray-700 max-w-sm w-full mx-4">
+            <div className="flex flex-col items-center space-y-6">
+              {/* Animated Logo */}
+              <div className="relative">
+                <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+                  <MessageSquare className="w-8 h-8 text-white" />
+                </div>
+                {/* Pulsing ring effect */}
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl animate-ping opacity-20"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl animate-pulse opacity-10"></div>
               </div>
-              <div className="text-center">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+              
+              {/* Loading Animation */}
+              <div className="flex flex-col items-center space-y-3">
+                <div className="flex space-x-1">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce [animation-delay:150ms]"></div>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:300ms]"></div>
+                </div>
+                
+                {/* Progress Bar */}
+                <div className="w-48 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full animate-pulse"></div>
+                </div>
+              </div>
+              
+              <div className="text-center space-y-2">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">
                   Loading Messages
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Please wait while we fetch your conversation...
+                  Fetching your conversation...
                 </p>
+              </div>
+              
+              {/* Decorative elements */}
+              <div className="flex space-x-2">
+                <div className="w-1 h-1 bg-blue-400 rounded-full animate-pulse"></div>
+                <div className="w-1 h-1 bg-purple-400 rounded-full animate-pulse [animation-delay:200ms]"></div>
+                <div className="w-1 h-1 bg-blue-400 rounded-full animate-pulse [animation-delay:400ms]"></div>
               </div>
             </div>
           </div>
@@ -747,39 +819,41 @@ export default function ChatPage() {
         </div>
       </header>
 
-             <div className="flex h-[calc(100vh-3.5rem)]">
-         {/* Left Sidebar - Collapsible */}
-         <div className="group relative">
-           {/* Hover Trigger */}
-           <div className="w-12 h-full bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col items-center py-4">
-             <button
-               onClick={createNewChat}
-               className="w-8 h-8 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-md hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors flex items-center justify-center"
-             >
-               <Plus className="w-4 h-4" />
-             </button>
-           </div>
+      <div className="flex h-[calc(100vh-3.5rem)]">
+        {/* Left Sidebar - Static (Fixed Position) */}
+        <div className="w-64 bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 border-r border-gray-700 dark:border-gray-600 flex flex-col fixed left-0 top-16 h-[calc(100vh-3.5rem)] shadow-2xl">
+          {/* Sidebar Header */}
+          <div className="p-4 border-b border-gray-700 dark:border-gray-600">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                <MessageSquare className="w-4 h-4 text-white" />
+              </div>
+              <h2 className="text-lg font-bold text-white">Chats</h2>
+            </div>
+            <button
+              onClick={createNewChat}
+              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-4 py-3 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New chat</span>
+            </button>
+          </div>
 
-           {/* Expanded Sidebar */}
-           <div className="absolute left-0 top-0 w-64 bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 h-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none group-hover:pointer-events-auto">
-             <div className="p-4">
-               <button
-                 onClick={createNewChat}
-                 className="w-full bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-4 py-3 rounded-md hover:bg-gray-800 dark:hover:bg-gray-100 font-semibold text-sm transition-colors flex items-center justify-center space-x-2"
-               >
-                 <Plus className="w-4 h-4" />
-                 <span>New chat</span>
-               </button>
-             </div>
-
-                         <div className="px-2">
-              <div className="space-y-1">
+          <div className="flex-1 overflow-y-auto">
+            <div className="px-3 py-1">
+              <div className="space-y-0.5">
                 {isLoadingSessions ? (
                   <div className="flex items-center justify-center py-4">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                    <div className="relative">
+                      <div className="w-5 h-5 border-2 border-gray-600 rounded-full"></div>
+                      <div className="absolute top-0 left-0 w-5 h-5 border-2 border-transparent border-t-blue-500 rounded-full animate-spin"></div>
+                    </div>
                   </div>
                 ) : chats.length === 0 ? (
                   <div className="text-center py-4">
+                    <div className="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-2">
+                      <MessageSquare className="w-4 h-4 text-gray-400" />
+                    </div>
                     <p className="text-sm text-gray-400">No chats yet</p>
                     <p className="text-xs text-gray-500 mt-1">Start a new conversation</p>
                   </div>
@@ -789,17 +863,24 @@ export default function ChatPage() {
                      key={chat.id}
                      initial={{ opacity: 0, x: -20 }}
                      animate={{ opacity: 1, x: 0 }}
-                     className={`p-2 rounded-lg cursor-pointer transition-colors group ${
+                     className={`p-1.5 rounded-md cursor-pointer transition-all duration-200 group ${
                        currentChat?.id === chat.id
-                         ? 'bg-gray-200 dark:bg-gray-700'
-                         : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                         ? 'bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30 shadow-sm'
+                         : 'hover:bg-gray-700/50 hover:border hover:border-gray-600/50'
                      }`}
                      onClick={() => selectChat(chat)}
                    >
                      <div className="flex items-center justify-between">
                        <div className="flex-1 min-w-0">
-                         <p className="text-sm text-gray-900 dark:text-white truncate">
+                         <p className={`text-sm font-medium truncate ${
+                           currentChat?.id === chat.id
+                             ? 'text-white'
+                             : 'text-gray-300 group-hover:text-white'
+                         }`}>
                            {chat.title}
+                         </p>
+                         <p className="text-xs text-gray-500 mt-0">
+                           {new Date(chat.updatedAt).toLocaleDateString()}
                          </p>
                        </div>
                        <button
@@ -808,273 +889,42 @@ export default function ChatPage() {
                            deleteChat(chat.id);
                          }}
                          disabled={deletingChatId === chat.id}
-                         className="text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 relative"
+                         className="text-gray-500 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-700/50 relative"
                        >
                          {deletingChatId === chat.id ? (
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-4 h-4 relative">
-                              <div className="absolute inset-0 border-2 border-gray-200 dark:border-gray-600 rounded-full"></div>
-                              <div className="absolute inset-0 border-2 border-transparent border-t-red-500 rounded-full animate-spin"></div>
+                            <div className="w-2.5 h-2.5 relative">
+                              <div className="absolute inset-0 border-2 border-gray-600 rounded-full"></div>
+                              <div className="absolute inset-0 border-2 border-transparent border-t-red-400 rounded-full animate-spin"></div>
                             </div>
                           </div>
                         ) : (
-                          <Trash2 className="w-3 h-3" />
+                          <Trash2 className="w-2.5 h-2.5" />
                         )}
                       </button>
                      </div>
-                                      </motion.div>
+                   </motion.div>
                   ))
                 )}
               </div>
             </div>
-           </div>
-         </div>
+          </div>
 
-        {/* Main Chat Area - ChatGPT Style */}
-        <div className="flex-1 flex flex-col bg-white dark:bg-gray-900">
+          {/* Sidebar Footer */}
+          <div className="p-3 border-t border-gray-700 dark:border-gray-600">
+            <div className="flex items-center space-x-2">
+              <div className="w-5 h-5 bg-gradient-to-r from-green-500 to-blue-500 rounded-full"></div>
+              <span className="text-xs text-gray-400">FusedAI</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Chat Area - ChatGPT Style with Left Margin for Fixed Sidebar */}
+        <div className="flex-1 flex flex-col bg-white dark:bg-gray-900 ml-64">
           {currentChat ? (
             <>
-                             {/* Chat Header - ChatGPT Style */}
-                               <div className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      {/* Modern AI Model Dropdown */}
-                      <div className="relative" ref={modelDropdownRef}>
-                                                 <button
-                           onClick={() => setShowModelDropdown(!showModelDropdown)}
-                           className="flex items-center space-x-2 text-base font-medium text-gray-900 dark:text-white hover:text-gray-700 dark:hover:text-gray-300 transition-colors cursor-pointer"
-                         >
-                           <span>{AI_MODELS.find(m => m.id === selectedModel)?.name}</span>
-                           <ChevronDown className={`w-4 h-4 transition-transform ${showModelDropdown ? 'rotate-180' : ''}`} />
-                         </button>
-                        
-                                                 {showModelDropdown && (
-                           <div className="absolute top-full left-0 mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
-                             <div className="p-1">
-                               {AI_MODELS.map((model) => (
-                                 <button
-                                   key={model.id}
-                                   onClick={() => {
-                                     setSelectedModel(model.id);
-                                     setShowModelDropdown(false);
-                                   }}
-                                   className={`w-full text-left p-2 rounded-md transition-colors ${
-                                     selectedModel === model.id
-                                       ? 'bg-gray-100 dark:bg-gray-700'
-                                       : 'hover:bg-gray-50 dark:hover:bg-gray-700'
-                                   }`}
-                                 >
-                                   <div className="flex items-center justify-between">
-                                     <div className="flex-1">
-                                       <div className="flex items-center space-x-2">
-                                         <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                           {model.name}
-                                         </span>
-                                         {selectedModel === model.id && (
-                                           <svg className="w-3.5 h-3.5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                           </svg>
-                                         )}
-                                       </div>
-                                       <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 leading-tight text-[10px]">
-                                         {model.description}
-                                       </p>
-                                     </div>
-                                   </div>
-                                 </button>
-                               ))}
-                             </div>
-                           </div>
-                         )}
-                      </div>
-                    </div>
-                                       <div className="flex items-center space-x-4">
-                      <button
-                        onClick={clearChat}
-                        disabled={isClearingChat}
-                        className="bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-3 py-1.5 rounded-md hover:bg-gray-800 dark:hover:bg-gray-100 text-sm font-medium transition-colors relative disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <span className={isClearingChat ? 'invisible' : ''}>Clear Chat</span>
-                        {isClearingChat && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-4 h-4 relative">
-                              <div className="absolute inset-0 border-2 border-gray-200 dark:border-gray-600 rounded-full"></div>
-                              <div className="absolute inset-0 border-2 border-transparent border-t-white dark:border-t-gray-900 rounded-full animate-spin"></div>
-                            </div>
-                          </div>
-                        )}
-                      </button>
-                    </div>
-                 </div>
-               </div>
-
-                             {/* Messages - Chat Bubble Style */}
-               <div className="flex-1 overflow-y-auto">
-                 <div className="max-w-4xl mx-auto p-4 space-y-4">
-                   {currentChat.messages.map((msg) => (
-                     <motion.div
-                       key={msg.id}
-                       initial={{ opacity: 0, y: 10 }}
-                       animate={{ opacity: 1, y: 0 }}
-                       className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                     >
-                       <div className={`flex items-start space-x-3 max-w-[70%] min-w-0 ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
-                         <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                           msg.role === 'user' 
-                             ? 'bg-gray-600' 
-                             : 'bg-black dark:bg-white'
-                         }`}>
-                           {msg.role === 'user' ? (
-                             <User className="w-4 h-4 text-white" />
-                           ) : (
-                             <Bot className="w-4 h-4 text-white dark:text-black" />
-                           )}
-                         </div>
-                         <div className={`px-4 py-2 rounded-lg break-words min-w-0 flex-1 ${
-                           msg.role === 'user'
-                             ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900'
-                             : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
-                         }`}>
-                           <p className="text-sm leading-relaxed whitespace-pre-wrap break-words overflow-hidden">
-                             {msg.content}
-                           </p>
-                         </div>
-                       </div>
-                     </motion.div>
-                   ))}
-                                     {isLoading && (
-                     <motion.div
-                       initial={{ opacity: 0, y: 10 }}
-                       animate={{ opacity: 1, y: 0 }}
-                       className="flex justify-start"
-                     >
-                       <div className="flex items-start space-x-3 max-w-[70%]">
-                         <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-black dark:bg-white`}>
-                           <Bot className="w-4 h-4 text-white dark:text-black" />
-                         </div>
-                         <div className="bg-gray-100 dark:bg-gray-800 px-4 py-2 rounded-lg">
-                           <div className="flex space-x-1">
-                             <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                             <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                             <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                           </div>
-                         </div>
-                       </div>
-                     </motion.div>
-                   )}
-                </div>
-                <div ref={messagesEndRef} />
-              </div>
-
-                             {/* Input Area - ChatGPT Style */}
-               <div className="p-4">
-                 <div className="max-w-xl mx-auto">
-                   {/* Show selected file indicator above input */}
-                   {selectedFile && (
-                     <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                       <div className="flex items-center justify-between">
-                         <div className="flex items-center space-x-2">
-                           <Paperclip className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                           <span className="text-sm text-blue-800 dark:text-blue-200 font-medium">
-                             {selectedFile.name}
-                           </span>
-                           <span className="text-xs text-blue-600 dark:text-blue-400">
-                             ({(selectedFile.size / 1024).toFixed(1)} KB)
-                           </span>
-                         </div>
-                         <button
-                           onClick={() => setSelectedFile(null)}
-                           className="p-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded transition-colors"
-                         >
-                           <X className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                         </button>
-                       </div>
-                     </div>
-                   )}
-                   
-                   <div className="relative">
-                     <textarea
-                       value={message}
-                       onChange={(e) => setMessage(e.target.value)}
-                       onKeyPress={(e) => {
-                         if (e.key === 'Enter' && !e.shiftKey) {
-                           e.preventDefault();
-                           sendMessage();
-                         }
-                       }}
-                       placeholder={selectedFile ? `Message FusedAI with ${selectedFile.name}...` : "Message FusedAI..."}
-                       className="w-full p-3 pr-32 border border-gray-300 dark:border-gray-600 rounded-full resize-none focus:outline-none focus:ring-2 focus:ring-gray-500 bg-black text-white"
-                       rows={1}
-                     />
-                     
-                     {/* Hidden file input */}
-                     <input
-                       ref={fileInputRef}
-                       type="file"
-                       multiple
-                       onChange={handleFileSelect}
-                       className="hidden"
-                     />
-                     
-                     <div className="absolute right-3 bottom-3 flex items-center space-x-2">
-                                               {/* Attachment Button */}
-                        <div className="relative">
-                          <button
-                            data-attachment-button
-                            onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
-                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                          >
-                            <Paperclip className="w-4 h-4" />
-                          </button>
-                          
-                          {/* Attachment Menu */}
-                          {showAttachmentMenu && (
-                            <div 
-                              data-attachment-menu
-                              className="absolute bottom-full right-0 mb-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-2 min-w-[160px]"
-                            >
-                             <button
-                               onClick={() => openFileSelector('document')}
-                               className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors flex items-center space-x-2"
-                             >
-                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                               </svg>
-                               <span>Documents</span>
-                             </button>
-                             <button
-                               onClick={() => openFileSelector('photo')}
-                               className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors flex items-center space-x-2"
-                             >
-                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                               </svg>
-                               <span>Photos</span>
-                             </button>
-                           </div>
-                         )}
-                       </div>
-                       
-                       <button
-                         onClick={sendMessage}
-                         disabled={!message.trim() || isLoading}
-                         className="bg-gray-900 dark:bg-white text-white dark:text-gray-900 p-2 rounded-md hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                       >
-                         <Send className="w-4 h-4" />
-                       </button>
-                       <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                         ⋮
-                       </button>
-                     </div>
-                   </div>
-                 </div>
-               </div>
-            </>
-          ) : (
-            /* Welcome Screen - ChatGPT Style */
-            <div className="flex-1 flex flex-col">
-              {/* Welcome Page Header with Model Selection */}
-              <div className="p-4">
+              {/* Chat Header - ChatGPT Style */}
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     {/* Modern AI Model Dropdown */}
@@ -1088,8 +938,8 @@ export default function ChatPage() {
                       </button>
                       
                       {showModelDropdown && (
-                        <div className="absolute top-full left-0 mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
-                          <div className="p-1">
+                        <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+                          <div className="p-0.5">
                             {AI_MODELS.map((model) => (
                               <button
                                 key={model.id}
@@ -1097,27 +947,19 @@ export default function ChatPage() {
                                   setSelectedModel(model.id);
                                   setShowModelDropdown(false);
                                 }}
-                                className={`w-full text-left p-2 rounded-md transition-colors ${
+                                className={`w-full text-left p-2 rounded-md transition-colors flex items-start space-x-3 ${
                                   selectedModel === model.id
                                     ? 'bg-gray-100 dark:bg-gray-700'
                                     : 'hover:bg-gray-50 dark:hover:bg-gray-700'
                                 }`}
                               >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex-1">
-                                    <div className="flex items-center space-x-2">
-                                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                        {model.name}
-                                      </span>
-                                      {selectedModel === model.id && (
-                                        <svg className="w-3.5 h-3.5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                        </svg>
-                                      )}
-                                    </div>
-                                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 leading-tight text-[10px]">
-                                      {model.description}
-                                    </p>
+                                <div className={`w-2 h-2 rounded-full mt-1.5 ${model.color}`}></div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium text-gray-900 dark:text-white">
+                                    {model.name}
+                                  </div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-0 leading-tight">
+                                    {model.description}
                                   </div>
                                 </div>
                               </button>
@@ -1127,144 +969,242 @@ export default function ChatPage() {
                       )}
                     </div>
                   </div>
-                </div>
-              </div>
-              
-              <div className="flex-1 flex items-center justify-center">
-                <div className="text-center max-w-2xl">
-                  <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
-                    FusedAI
-                  </h1>
-                  <p className="text-xl text-gray-600 dark:text-gray-300 mb-8">
-                    How can I help you today?
-                  </p>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
+                  <div className="flex items-center space-x-2">
                     <button
-                      onClick={createNewChat}
-                      className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-left transition-colors"
+                      onClick={clearChat}
+                      disabled={isClearingChat || currentChat.messages.length === 0}
+                      className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Generate a quote</h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Create professional quotes for your business</p>
-                    </button>
-                    <button
-                      onClick={createNewChat}
-                      className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-left transition-colors"
-                    >
-                      <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Analyze documents</h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Extract insights from your business documents</p>
+                      {isClearingChat ? (
+                        <div className="w-4 h-4 relative">
+                          <div className="absolute inset-0 border-2 border-gray-200 dark:border-gray-600 rounded-full"></div>
+                          <div className="absolute inset-0 border-2 border-transparent border-t-gray-400 rounded-full animate-spin"></div>
+                        </div>
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                      <span>Clear Chat</span>
                     </button>
                   </div>
                 </div>
               </div>
-              
-              {/* Input Area for Welcome Screen */}
-              <div className="p-4">
-                <div className="max-w-2xl mx-auto">
-                  <div className="relative">
-                    {/* Show selected file indicator above input */}
-                    {selectedFile && (
-                      <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <Paperclip className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                            <span className="text-sm text-blue-800 dark:text-blue-200 font-medium">
-                              {selectedFile.name}
-                            </span>
-                            <span className="text-xs text-blue-600 dark:text-blue-400">
-                              ({(selectedFile.size / 1024).toFixed(1)} KB)
-                            </span>
+
+              {/* Messages Area - ChatGPT Style */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                {currentChat.messages.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                      <MessageSquare className="w-8 h-8 text-gray-400" />
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                      Start a conversation
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      Send a message to begin chatting with {AI_MODELS.find(m => m.id === selectedModel)?.name}
+                    </p>
+                  </div>
+                ) : (
+                  currentChat.messages.map((msg) => (
+                    <motion.div
+                      key={msg.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`flex items-start space-x-3 max-w-3xl ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                          msg.role === 'user' 
+                            ? 'bg-gray-900 dark:bg-white' 
+                            : 'bg-gray-100 dark:bg-gray-700'
+                        }`}>
+                          {msg.role === 'user' ? (
+                            <User className="w-4 h-4 text-white dark:text-gray-900" />
+                          ) : (
+                            <Bot className="w-4 h-4 text-gray-600 dark:text-gray-300" />
+                          )}
+                        </div>
+                        <div className={`px-4 py-3 rounded-lg relative group ${
+                          msg.role === 'user'
+                            ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                        }`}>
+                          {/* Copy button for AI messages */}
+                          {msg.role === 'assistant' && (
+                            <button
+                              onClick={() => handleCopyClick(msg.id, msg.content)}
+                              className="absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors opacity-0 group-hover:opacity-100"
+                              title="Copy message"
+                            >
+                              {copiedMessageId === msg.id ? (
+                                <Check className="w-3 h-3 text-green-500" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
+                          )}
+                          
+                          <div className="pr-8">
+                            <p className="text-sm whitespace-pre-wrap">
+                              {formatMessageContent(msg.content)}
+                            </p>
+                            <div className={`text-xs mt-2 ${
+                              msg.role === 'user' 
+                                ? 'text-gray-300 dark:text-gray-600' 
+                                : 'text-gray-500 dark:text-gray-400'
+                            }`}>
+                              {msg.timestamp.toLocaleTimeString()}
+                            </div>
                           </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))
+                )}
+                
+                {/* Loading Message */}
+                {isLoading && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex justify-start"
+                  >
+                    <div className="flex items-start space-x-3 max-w-3xl">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 dark:bg-gray-700">
+                        <Bot className="w-4 h-4 text-gray-600 dark:text-gray-300" />
+                      </div>
+                      <div className="px-4 py-3 rounded-lg bg-gray-100 dark:bg-gray-700">
+                        <div className="flex items-center space-x-2">
+                          <div className="flex space-x-1">
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                          </div>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">Thinking...</span>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+                
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input Area - Updated Design to Match Screenshot */}
+              <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="max-w-4xl mx-auto">
+                  {/* Selected File Preview */}
+                  {selectedFile && (
+                    <div className="mb-3 flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      <Paperclip className="w-4 h-4 text-gray-500" />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">{selectedFile.name}</span>
+                      <button
+                        onClick={() => setSelectedFile(null)}
+                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-auto"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                  
+                  <div className="relative flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-2">
+                    {/* Plus Button */}
+                    <button
+                      data-attachment-button
+                      onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+                      className="p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
+                    >
+                      <Plus className="w-5 h-5" />
+                    </button>
+                    
+                    {/* Attachment Menu */}
+                    {showAttachmentMenu && (
+                      <div 
+                        data-attachment-menu
+                        className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50"
+                      >
+                        <div className="p-1">
                           <button
-                            onClick={() => setSelectedFile(null)}
-                            className="p-1 hover:bg-blue-200 dark:hover:bg-blue-800 rounded transition-colors"
+                            onClick={() => openFileSelector('document')}
+                            className="w-full text-left p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 text-sm text-gray-700 dark:text-gray-300"
                           >
-                            <X className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                            📄 Upload Document
+                          </button>
+                          <button
+                            onClick={() => openFileSelector('photo')}
+                            className="w-full text-left p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 text-sm text-gray-700 dark:text-gray-300"
+                          >
+                            🖼️ Upload Photo
                           </button>
                         </div>
                       </div>
                     )}
-                    
-                    <textarea
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          sendMessage();
-                        }
-                      }}
-                      placeholder="Message FusedAI..."
-                      className="w-full p-3 pr-32 border border-gray-300 dark:border-gray-600 rounded-full resize-none focus:outline-none focus:ring-2 focus:ring-gray-500 dark:bg-gray-800 dark:text-white"
-                      rows={1}
-                    />
-                    
-                    {/* Hidden file input */}
+
+                    {/* Hidden File Input */}
                     <input
                       ref={fileInputRef}
                       type="file"
-                      multiple
                       onChange={handleFileSelect}
                       className="hidden"
                     />
-                    
-                    <div className="absolute right-3 bottom-3 flex items-center space-x-2">
-                      {/* Attachment Button */}
-                      <div className="relative">
-                        <button
-                          data-attachment-button
-                          onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
-                          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                        >
-                          <Paperclip className="w-4 h-4" />
-                        </button>
-                        
-                        {/* Attachment Menu */}
-                        {showAttachmentMenu && (
-                          <div 
-                            data-attachment-menu
-                            className="absolute bottom-full right-0 mb-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-2 min-w-[160px]"
-                          >
-                           <button
-                             onClick={() => openFileSelector('document')}
-                             className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors flex items-center space-x-2"
-                           >
-                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                             </svg>
-                             <span>Documents</span>
-                           </button>
-                           <button
-                             onClick={() => openFileSelector('photo')}
-                             className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors flex items-center space-x-2"
-                           >
-                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                             </svg>
-                             <span>Photos</span>
-                           </button>
-                         </div>
-                       )}
-                     </div>
-                     
-                     <button
-                       onClick={sendMessage}
-                       disabled={!message.trim() || isLoading}
-                       className="bg-gray-900 dark:bg-white text-white dark:text-gray-900 p-2 rounded-md hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                     >
-                       <Send className="w-4 h-4" />
-                     </button>
-                     <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                       ⋮
-                     </button>
-                   </div>
-                 </div>
-               </div>
-             </div>
-           </div>
+
+                    {/* Message Input */}
+                    <div className="flex-1 mx-2">
+                      <textarea
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            sendMessage();
+                          }
+                        }}
+                        placeholder="Ask anything"
+                        className="w-full bg-transparent border-none outline-none resize-none text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-none focus:ring-0 focus:outline-none"
+                        rows={1}
+                        style={{
+                          minHeight: '24px',
+                          maxHeight: '120px',
+                        }}
+                      />
+                    </div>
+
+                    {/* Send Button */}
+                    <button
+                      onClick={sendMessage}
+                      disabled={!message.trim() || isLoading}
+                      className="p-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-full hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            /* Welcome Screen */
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center max-w-md">
+                <div className="w-20 h-20 mx-auto mb-6 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                  <MessageSquare className="w-10 h-10 text-gray-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+                  Welcome to FusedAI
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400 mb-8">
+                  Select a chat from the sidebar or start a new conversation to begin.
+                </p>
+                <button
+                  onClick={createNewChat}
+                  className="bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-6 py-3 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-100 font-semibold transition-colors"
+                >
+                  Start New Chat
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>
     </div>
   );
-} 
+}

@@ -17,7 +17,8 @@ import {
   X,
   Minimize2,
   Maximize2,
-  Trash2
+  Trash2,
+  MapPin
 } from 'lucide-react';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/theme-provider';
@@ -48,8 +49,19 @@ export default function ProjectsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
   const { toast } = useToast();
+
+  // Extract unique dates and companies from projects data
+  const uniqueDates = [...new Set(projects.map(project => {
+    // You might want to add a date field to your Project interface
+    // For now, using current date as placeholder
+    return new Date().toLocaleDateString();
+  }))].sort();
+
+  const uniqueCompanies = [...new Set(projects.map(project => project.project_customer_name))].sort();
 
   const handleDeleteProject = async (projectId: string) => {
     try {
@@ -84,6 +96,9 @@ export default function ProjectsPage() {
           title: "Success",
           description: "Project deleted successfully"
         });
+        // Close the modal
+        setShowDeleteModal(false);
+        setProjectToDelete(null);
       } else {
         throw new Error(data.message || 'Failed to delete project');
       }
@@ -97,6 +112,16 @@ export default function ProjectsPage() {
     } finally {
       setDeletingProjectId(null);
     }
+  };
+
+  const openDeleteModal = (project: Project) => {
+    setProjectToDelete(project);
+    setShowDeleteModal(true);
+  };
+
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setProjectToDelete(null);
   };
 
   useEffect(() => {
@@ -164,7 +189,7 @@ export default function ProjectsPage() {
     }
   };
 
-  // Filter projects based on search term and status filter
+  // Filter projects based on search term, status filter, date filter, and company filter
   const filteredProjects = projects.filter((project) => {
     const matchesSearch = searchTerm === '' || 
       project.project_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -175,7 +200,13 @@ export default function ProjectsPage() {
     const matchesStatus = statusFilter === 'All Status' || 
       project.project_status.toLowerCase() === statusFilter.toLowerCase();
     
-    return matchesSearch && matchesStatus;
+    const matchesDate = dateFilter === 'All Dates' || 
+      new Date().toLocaleDateString() === dateFilter; // You might want to add a date field to your Project interface
+    
+    const matchesCompany = companyFilter === 'All Companies' || 
+      project.project_customer_name === companyFilter;
+    
+    return matchesSearch && matchesStatus && matchesDate && matchesCompany;
   });
 
   const handleSendMessage = () => {
@@ -292,8 +323,11 @@ export default function ProjectsPage() {
                          </SelectTrigger>
                          <SelectContent>
                            <SelectItem value="All Dates">All Dates</SelectItem>
-                           <SelectItem value="7/16/2025">7/16/2025</SelectItem>
-                           <SelectItem value="7/23/2025">7/23/2025</SelectItem>
+                           {uniqueDates.map((date) => (
+                             <SelectItem key={date} value={date}>
+                               {date}
+                             </SelectItem>
+                           ))}
                          </SelectContent>
                        </Select>
                      </div>
@@ -308,29 +342,33 @@ export default function ProjectsPage() {
                          </SelectTrigger>
                          <SelectContent>
                            <SelectItem value="All Companies">All Companies</SelectItem>
-                           <SelectItem value="Acme Anchors">Acme Anchors</SelectItem>
+                           {uniqueCompanies.map((company) => (
+                             <SelectItem key={company} value={company}>
+                               {company}
+                             </SelectItem>
+                           ))}
                          </SelectContent>
                        </Select>
                      </div>
                      
                      <div className="flex space-x-2 pt-2">
-                                               <button
-                          onClick={() => {
-                            setDateFilter('All Dates');
-                            setCompanyFilter('All Companies');
-                            setIsFilterOpen(false);
-                          }}
-                          className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                        >
-                          Clear All
-                        </button>
-                        <button
-                          onClick={() => setIsFilterOpen(false)}
-                          className="flex-1 px-3 py-2 text-sm bg-black dark:bg-white text-white dark:text-black rounded-md hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
-                        >
-                          Apply
-                        </button>
-                                          </div>
+                       <button
+                         onClick={() => {
+                           setDateFilter('All Dates');
+                           setCompanyFilter('All Companies');
+                           setIsFilterOpen(false);
+                         }}
+                         className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                       >
+                         Clear All
+                       </button>
+                       <button
+                         onClick={() => setIsFilterOpen(false)}
+                         className="flex-1 px-3 py-2 text-sm bg-black dark:bg-white text-white dark:text-black rounded-md hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
+                       >
+                         Apply
+                       </button>
+                     </div>
                    </div>
                  </div>
                )}
@@ -395,15 +433,15 @@ export default function ProjectsPage() {
 
                  <div className="space-y-2 mb-3">
                    <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400">
-                     <Building2 className="w-3 h-3" />
+                     <MapPin className="w-3 h-3" />
                      <span>{project.project_address}</span>
                    </div>
                    <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400">
-                     <User className="w-3 h-3" />
+                     <Building2 className="w-3 h-3" />
                      <span>{project.project_customer_name}</span>
                    </div>
                    <div className="flex items-center space-x-2 text-xs text-gray-600 dark:text-gray-400">
-                     <Phone className="w-3 h-3" />
+                     <User className="w-3 h-3" />
                      <span>{project.project_contact}</span>
                    </div>
                  </div>
@@ -436,11 +474,7 @@ export default function ProjectsPage() {
                     </button>
                   </Link>
                   <button
-                    onClick={() => {
-                      if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-                        handleDeleteProject(project.project_id);
-                      }
-                    }}
+                    onClick={() => openDeleteModal(project)}
                     disabled={deletingProjectId === project.project_id}
                     className={`p-1.5 rounded-md transition-colors ${
                       deletingProjectId === project.project_id
@@ -577,6 +611,95 @@ export default function ProjectsPage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Delete Confirmation Modal */}
+        <AnimatePresence>
+          {showDeleteModal && projectToDelete && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+              onClick={closeDeleteModal}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Delete Project
+                  </h3>
+                  <button
+                    onClick={closeDeleteModal}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <div className="mb-6">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                      <Trash2 className="w-5 h-5 text-red-600 dark:text-red-400" />
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-gray-900 dark:text-white">
+                        Are you sure you want to delete this project?
+                      </h4>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        This action cannot be undone.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
+                      Project: {projectToDelete.project_name}
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Customer: {projectToDelete.project_customer_name}
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Status: {projectToDelete.project_status}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={closeDeleteModal}
+                    disabled={deletingProjectId === projectToDelete.project_id}
+                    className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors text-sm disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleDeleteProject(projectToDelete.project_id)}
+                    disabled={deletingProjectId === projectToDelete.project_id}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                  >
+                    {deletingProjectId === projectToDelete.project_id ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Deleting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4" />
+                        <span>Delete Project</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
       <Toaster />
     </div>
   );
