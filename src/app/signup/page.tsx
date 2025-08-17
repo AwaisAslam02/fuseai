@@ -55,7 +55,7 @@ export default function SignupPage() {
       };
 
       // Make API call
-      const response = await fetch('http://localhost:8000/api/fusedai/signup', {
+      const response = await fetch('https://chikaai.net/api/fusedai/signup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

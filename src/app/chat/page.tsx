@@ -28,12 +28,14 @@ interface Chat {
 }
 
 const AI_MODELS = [
+  { id: 'fusedaipro', name: 'FusedAI Pro', description: 'Smartest model - auto-selects the best AI for your query', color: 'bg-gradient-to-r from-indigo-500 to-purple-600' },
   { id: 'claude', name: 'Claude', description: 'Advanced reasoning and thoughtful analysis', color: 'bg-blue-500' },
   { id: 'openai', name: 'GPT', description: 'Creative writing and programming excellence', color: 'bg-green-500' },
   { id: 'gemini', name: 'Gemini', description: 'Google\'s multimodal AI with strong vision capabilities', color: 'bg-orange-500' },
   { id: 'grok', name: 'Grok', description: 'Real-time insights and current information access', color: 'bg-red-500' },
   { id: 'deepseek', name: 'DeepSeek', description: 'High-performance reasoning and technical analysis', color: 'bg-purple-500' },
   { id: 'fusedai', name: 'FusedAI', description: 'Multi-model synthesis for comprehensive research', color: 'bg-indigo-500' },
+  { id: 'perplexity', name: 'Perplexity', description: 'Real-time search and web-connected AI assistant', color: 'bg-teal-500' },
 ];
    
 export default function ChatPage() {
@@ -42,7 +44,7 @@ export default function ChatPage() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [currentChat, setCurrentChat] = useState<Chat | null>(null);
   const [message, setMessage] = useState('');
-  const [selectedModel, setSelectedModel] = useState('gemini');
+  const [selectedModel, setSelectedModel] = useState('fusedaipro');
   const [isLoading, setIsLoading] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
@@ -83,7 +85,7 @@ export default function ChatPage() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/get-chat-sessions', {
+      const response = await fetch('https://chikaai.net/api/fusedai/get-chat-sessions', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -161,7 +163,7 @@ export default function ChatPage() {
 
       const sessionName = firstMessage.length > 30 ? firstMessage.substring(0, 30) + '...' : firstMessage;
 
-      const response = await fetch('http://localhost:8000/api/fusedai/create-chat-session', {
+      const response = await fetch('https://chikaai.net/api/fusedai/create-chat-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -224,7 +226,7 @@ export default function ChatPage() {
         formData.append('file', file);
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/chat-with-ai', {
+      const response = await fetch('https://chikaai.net/api/fusedai/chat-with-ai', {
         method: 'POST',
         headers: {
           'token': `${token}`
@@ -275,7 +277,7 @@ export default function ChatPage() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/get-chat-session-messages', {
+      const response = await fetch('https://chikaai.net/api/fusedai/get-chat-session-messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -511,7 +513,7 @@ export default function ChatPage() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/delete-chat-session', {
+      const response = await fetch('https://chikaai.net/api/fusedai/delete-chat-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -582,7 +584,7 @@ export default function ChatPage() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/clear-chat-messages', {
+      const response = await fetch('https://chikaai.net/api/fusedai/clear-chat-messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -832,7 +834,7 @@ export default function ChatPage() {
             </div>
             <button
               onClick={createNewChat}
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-4 py-3 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
             >
               <Plus className="w-4 h-4" />
               <span>New chat</span>
@@ -840,8 +842,8 @@ export default function ChatPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            <div className="px-3 py-1">
-              <div className="space-y-0.5">
+            <div className="px-3 py-0.5">
+              <div className="space-y-0">
                 {isLoadingSessions ? (
                   <div className="flex items-center justify-center py-4">
                     <div className="relative">
@@ -863,7 +865,7 @@ export default function ChatPage() {
                      key={chat.id}
                      initial={{ opacity: 0, x: -20 }}
                      animate={{ opacity: 1, x: 0 }}
-                     className={`p-1.5 rounded-md cursor-pointer transition-all duration-200 group ${
+                     className={`p-2 rounded-md cursor-pointer transition-all duration-200 group ${
                        currentChat?.id === chat.id
                          ? 'bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30 shadow-sm'
                          : 'hover:bg-gray-700/50 hover:border hover:border-gray-600/50'
@@ -879,7 +881,9 @@ export default function ChatPage() {
                          }`}>
                            {chat.title}
                          </p>
-                         <p className="text-xs text-gray-500 mt-0">
+                       </div>
+                                              <div className="flex items-center space-x-2 ml-2">
+                         <p className="text-xs text-gray-500 leading-tight">
                            {new Date(chat.updatedAt).toLocaleDateString()}
                          </p>
                        </div>

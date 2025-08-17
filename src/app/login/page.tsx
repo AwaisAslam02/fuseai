@@ -34,7 +34,7 @@ export default function LoginPage() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/check-session', {
+      const response = await fetch('https://chikaai.net/api/fusedai/check-session', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -82,7 +82,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/fusedai/login', {
+      const response = await fetch('https://chikaai.net/api/fusedai/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

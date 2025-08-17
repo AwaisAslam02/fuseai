@@ -36,9 +36,11 @@ import {
   Save,
   TrendingUp,
   Target,
-  Copy
+  Copy,
+  LogOut
 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '@/components/theme-provider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -186,6 +188,7 @@ const getCategoryFromType = (fileType: string): Document['category'] => {
 };
 
 export default function ProjectChatPage({ params }: { params: Promise<{ id: string }> }) {
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -223,15 +226,18 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     description: '',
     category: '',
     quantity: 1,
-    unit: 'Each',
+    unit: 'pcs',
     unitPrice: 0,
     vendor: '',
     partNumber: '',
     manufacturer: '',
     modelNumber: '',
-    notes: '',
-    margin: 35
+    notes: ''
   });
+
+  // Pagination states for BOM
+  const [currentBOMPage, setCurrentBOMPage] = useState(1);
+  const [bomItemsPerPage, setBomItemsPerPage] = useState(10);
 
   // AI Estimation States
   const [activeEstimationTab, setActiveEstimationTab] = useState('Overview');
@@ -265,6 +271,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     category: 'materials'
   });
   const [isGeneratingQuote, setIsGeneratingQuote] = useState(false);
+  const [showMagicAnimation, setShowMagicAnimation] = useState(false);
   const [quoteContent, setQuoteContent] = useState<string>('');
   const [pdfUrl, setPdfUrl] = useState<string>('');
   const [showPdfPreview, setShowPdfPreview] = useState(false);
@@ -320,7 +327,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           return;
         }
 
-        const response = await fetch('http://localhost:8000/api/fusedai/get-all-documents', {
+        const response = await fetch('https://chikaai.net/api/fusedai/get-all-documents', {
           method: 'POST',  // Changed to POST to send body
           headers: {
             'Content-Type': 'application/json',
@@ -377,7 +384,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           return;
         }
 
-        const response = await fetch('http://localhost:8000/api/fusedai/get-project-messages', {
+        const response = await fetch('https://chikaai.net/api/fusedai/get-project-messages', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -488,7 +495,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           return;
         }
 
-        const response = await fetch('http://localhost:8000/api/fusedai/get-all-bill-of-materials', {
+        const response = await fetch('https://chikaai.net/api/fusedai/get-all-bill-of-materials', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -577,7 +584,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           return;
         }
 
-        const response = await fetch('http://localhost:8000/api/fusedai/get-all-categories', {
+        const response = await fetch('https://chikaai.net/api/fusedai/get-all-categories', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -610,7 +617,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           return;
         }
 
-        const response = await fetch('http://localhost:8000/api/fusedai/get-all-labors', {
+        const response = await fetch('https://chikaai.net/api/fusedai/get-all-labors', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -783,7 +790,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           return;
         }
 
-        const response = await fetch('http://localhost:8000/api/fusedai/upload-any-file', {
+        const response = await fetch('https://chikaai.net/api/fusedai/upload-any-file', {
           method: 'POST',
           headers: {
             'token': token
@@ -901,6 +908,19 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     return totals;
   };
 
+  // Pagination functions for BOM
+  const getPaginatedBOMItems = (items: BOMItem[], categoryName: string) => {
+    const categoryItems = items.filter(item => item.category === categoryName);
+    const startIndex = (currentBOMPage - 1) * bomItemsPerPage;
+    const endIndex = startIndex + bomItemsPerPage;
+    return categoryItems.slice(startIndex, endIndex);
+  };
+
+  const getTotalBOMPages = (items: BOMItem[], categoryName: string) => {
+    const categoryItems = items.filter(item => item.category === categoryName);
+    return Math.ceil(categoryItems.length / bomItemsPerPage);
+  };
+
   const getUniqueCategories = () => {
     const categories = [...new Set(bomItems.map(item => item.category))];
     const totalCost = bomItems.reduce((sum, item) => sum + item.totalCost, 0);
@@ -942,7 +962,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/create-bill-of-materials', {
+      const response = await fetch('https://chikaai.net/api/fusedai/create-bill-of-materials', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1011,7 +1031,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         // Refresh BOM data from backend
         const fetchBillOfMaterials = async () => {
           try {
-            const bomResponse = await fetch('http://localhost:8000/api/fusedai/get-all-bill-of-materials', {
+            const bomResponse = await fetch('https://chikaai.net/api/fusedai/get-all-bill-of-materials', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -1142,7 +1162,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/create-category', {
+      const response = await fetch('https://chikaai.net/api/fusedai/create-category', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1175,7 +1195,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         // Refresh categories from backend
         const fetchCategories = async () => {
           try {
-            const catResponse = await fetch('http://localhost:8000/api/fusedai/get-all-categories', {
+            const catResponse = await fetch('https://chikaai.net/api/fusedai/get-all-categories', {
               method: 'GET',
               headers: {
                 'Content-Type': 'application/json',
@@ -1250,7 +1270,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/delete-document', {
+      const response = await fetch('https://chikaai.net/api/fusedai/delete-document', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1307,7 +1327,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
             return;
           }
 
-          const response = await fetch('http://localhost:8000/api/fusedai/get-project-related-data', {
+          const response = await fetch('https://chikaai.net/api/fusedai/get-project-related-data', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -1379,7 +1399,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/chat-with-document', {
+      const response = await fetch('https://chikaai.net/api/fusedai/chat-with-document', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1494,7 +1514,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       formData.append('file', selectedImageFile);
       formData.append('project_id', projectId.toString());
 
-      const response = await fetch('http://localhost:8000/api/fusedai/project-image', {
+      const response = await fetch('https://chikaai.net/api/fusedai/project-image', {
         method: 'POST',
         headers: {
           'token': token
@@ -1557,7 +1577,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       formData.append('file', selectedImageFile);
       formData.append('project_id', projectId.toString());
 
-      const response = await fetch('http://localhost:8000/api/fusedai/project-image', {
+      const response = await fetch('https://chikaai.net/api/fusedai/project-image', {
         method: 'POST',
         headers: {
           'token': token
@@ -1602,6 +1622,20 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     });
   };
 
+  const handleSignOut = () => {
+    // Clear session storage
+    localStorage.removeItem('token');
+    
+    // Show sign out message
+    toast({
+      title: "Success",
+      description: "Signed out successfully"
+    });
+
+    // Redirect to home page
+    router.push('/');
+  };
+
   const handleClearChat = async () => {
     if (!projectId) {
       toast({
@@ -1625,7 +1659,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/delete-project-chat-history', {
+      const response = await fetch('https://chikaai.net/api/fusedai/delete-project-chat-history', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1694,7 +1728,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/create-labor', {
+      const response = await fetch('https://chikaai.net/api/fusedai/create-labor', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1731,7 +1765,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         // Refresh labor data from backend
         const fetchLabors = async () => {
           try {
-            const laborResponse = await fetch('http://localhost:8000/api/fusedai/get-all-labors', {
+            const laborResponse = await fetch('https://chikaai.net/api/fusedai/get-all-labors', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -1789,7 +1823,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/delete-labor', {
+      const response = await fetch('https://chikaai.net/api/fusedai/delete-labor', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1996,6 +2030,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
   const handlePreviewAndGenerate = async () => {
     try {
       setIsGeneratingQuote(true);
+      setShowMagicAnimation(true);
       setQuoteContent('');
 
       const token = localStorage.getItem('token');
@@ -2027,7 +2062,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         project_address: project.date || '' // Using date as placeholder since address isn't in the interface
       };
 
-      const response = await fetch('http://localhost:8000/api/fusedai/preview-and-generate-report', {
+      const response = await fetch('https://chikaai.net/api/fusedai/preview-and-generate-report', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2060,6 +2095,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       });
     } finally {
       setIsGeneratingQuote(false);
+      setShowMagicAnimation(false);
     }
   };
 
@@ -2490,11 +2526,11 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     <div className="min-h-screen bg-white dark:bg-gray-900 flex">
       {/* Sidebar - Static (Fixed Position) */}
       <div 
-        className="w-64 bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 border-r border-gray-700 dark:border-gray-600 flex-shrink-0 fixed left-0 top-0 h-screen z-40 shadow-2xl"
+        className="w-48 bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 border-r border-gray-700 dark:border-gray-600 flex-shrink-0 fixed left-0 top-0 h-screen z-40 shadow-2xl"
       >
         {/* Project Header */}
         <div className="border-b border-gray-700 dark:border-gray-600">
-          <div className="px-3 pt-3">
+          <div className="px-2 pt-3">
             <Link 
               href="/projects"
               className="inline-flex p-1.5 text-gray-400 hover:text-white transition-colors rounded-md hover:bg-gray-700/50"
@@ -2504,9 +2540,9 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
             </Link>
           </div>
           
-          <div className="px-3 pb-3 pt-2">
+          <div className="px-2 pb-3 pt-2">
             <div className="flex items-center justify-between mb-3">
-              <h1 className="text-sm font-bold text-white">
+              <h1 className="text-xs font-bold text-white">
                 {project.title}
               </h1>
               <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
@@ -2526,13 +2562,13 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
 
         {/* Project Sections */}
         <div className="pt-2">
-          <div className="px-3 mb-3">
+          <div className="px-2 mb-3">
             <div className="flex items-center space-x-2">
               <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
                 <div className="w-3 h-3 bg-white rounded-sm"></div>
               </div>
               <h2 className="text-xs uppercase tracking-wider font-bold text-gray-300">
-                Project Sections
+                Sections
               </h2>
             </div>
           </div>
@@ -2546,7 +2582,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                 <button
                   key={section.name}
                   onClick={() => setActiveSection(section.name)}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  className={`w-full flex items-center space-x-2 px-2 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                     isActive
                       ? 'bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30 shadow-md text-white'
                       : 'text-gray-300 hover:text-white hover:bg-gray-700/50'
@@ -2569,8 +2605,71 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         </div>
       </div>
 
+      {/* Magic Animation Overlay */}
+      {showMagicAnimation && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center">
+          <div className="bg-gradient-to-br from-white via-gray-50 to-white dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 rounded-3xl p-12 shadow-2xl border border-gray-200 dark:border-gray-700 max-w-md w-full mx-4">
+            <div className="flex flex-col items-center space-y-8">
+              {/* Animated Logo */}
+              <div className="relative">
+                <div className="w-20 h-20 bg-gradient-to-r from-blue-500 via-purple-600 to-indigo-600 rounded-3xl flex items-center justify-center shadow-2xl">
+                  <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center">
+                    <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl"></div>
+                  </div>
+                </div>
+                {/* Pulsing ring effect */}
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-600 to-indigo-600 rounded-3xl animate-ping opacity-20"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-600 to-indigo-600 rounded-3xl animate-pulse opacity-10"></div>
+              </div>
+              
+              {/* Magic Text */}
+              <div className="text-center space-y-4">
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  FusedAI is doing its magic
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Crafting your perfect quote report...
+                </p>
+              </div>
+              
+              {/* Animated Progress */}
+              <div className="w-full space-y-3">
+                <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                  <span>Analyzing project data...</span>
+                  <span className="animate-pulse">✓</span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                  <span>Processing BOM items...</span>
+                  <span className="animate-pulse">✓</span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                  <span>Calculating costs...</span>
+                  <span className="animate-pulse">✓</span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                  <span>Generating report...</span>
+                  <span className="animate-spin">⟳</span>
+                </div>
+              </div>
+              
+              {/* Loading Animation */}
+              <div className="flex space-x-2">
+                <div className="w-3 h-3 bg-blue-500 rounded-full animate-bounce"></div>
+                <div className="w-3 h-3 bg-purple-500 rounded-full animate-bounce [animation-delay:150ms]"></div>
+                <div className="w-3 h-3 bg-indigo-500 rounded-full animate-bounce [animation-delay:300ms]"></div>
+              </div>
+              
+              {/* Progress Bar */}
+              <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-blue-500 via-purple-600 to-indigo-600 rounded-full animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content - With Left Margin for Fixed Sidebar */}
-      <div className="flex-1 flex flex-col ml-64">
+      <div className="flex-1 flex flex-col ml-48">
         {/* Header */}
         <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
           <div className="flex items-center justify-between">
@@ -2605,6 +2704,13 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                 </button>
               )}
               <ThemeToggle />
+              <button
+                onClick={handleSignOut}
+                className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 rounded-md transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sign out</span>
+              </button>
             </div>
           </div>
         </header>
@@ -2709,7 +2815,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           </div>
         ) : activeSection === 'Quotes' ? (
           <div className="flex-1 p-6 overflow-y-auto">
-            <div className="max-w-6xl mx-auto space-y-6">
+            <div className="max-w-6xl mx-auto space-y-6 w-full">
               {/* Tabs */}
               <div className="flex space-x-4 overflow-x-auto pb-4">
                 {['Customer Setup', 'BOM Items', 'Labor Types', 'Custom Items', 'Preview & Generate'].map((tab) => (
@@ -3007,25 +3113,18 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                     </div>
                     
                     {/* Action Buttons */}
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button className="flex items-center space-x-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-sm font-medium">
-                        <Brain className="w-4 h-4" />
-                        <span>AI Reclassify &apos;Other&apos;</span>
-                      </button>
-                      <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm font-medium">
-                        <Upload className="w-4 h-4" />
-                        <span>Import from Documents</span>
-                      </button>
+                    <div className="flex flex-wrap items-center gap-2">
+
                       <button 
                         onClick={() => setIsAddItemModalOpen(true)}
-                        className="flex items-center space-x-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-sm font-medium"
+                        className="flex items-center space-x-2 px-3 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-sm font-medium"
                       >
                         <Plus className="w-4 h-4" />
                         <span>Add Item</span>
                       </button>
                       <button 
                         onClick={handleDeleteAllBOMItems}
-                        className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+                        className="flex items-center space-x-2 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
                       >
                         <Trash2 className="w-4 h-4" />
                         <span>Delete All</span>
@@ -3034,8 +3133,8 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                   </div>
 
                   {/* Summary Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
                       <div className="flex items-center space-x-2">
                         <Package className="w-5 h-5 text-blue-500" />
                         <div>
@@ -3047,7 +3146,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                       </div>
                     </div>
                     
-                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
                       <div className="flex items-center space-x-2">
                         <Package className="w-5 h-5 text-green-500" />
                         <div>
@@ -3059,7 +3158,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                       </div>
                     </div>
                     
-                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
                       <div className="flex items-center space-x-2">
                         <Package className="w-5 h-5 text-green-500" />
                         <div>
@@ -3071,7 +3170,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                       </div>
                     </div>
                     
-                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
                       <div className="flex items-center space-x-2">
                         <Package className="w-5 h-5 text-purple-500" />
                         <div>
@@ -3085,10 +3184,10 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                   </div>
 
                   {/* Tabs */}
-                  <div className="flex space-x-4 border-b border-gray-200 dark:border-gray-700">
+                  <div className="flex space-x-3 border-b border-gray-200 dark:border-gray-700">
                     <button
                       onClick={() => setActiveBOMTab('BOM Items')}
-                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                      className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                         activeBOMTab === 'BOM Items'
                           ? 'border-black dark:border-white text-black dark:text-white'
                           : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -3098,7 +3197,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                     </button>
                     <button
                       onClick={() => setActiveBOMTab('Categories')}
-                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                      className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                         activeBOMTab === 'Categories'
                           ? 'border-black dark:border-white text-black dark:text-white'
                           : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
@@ -3110,7 +3209,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
 
                   {/* BOM Items Tab */}
                   {activeBOMTab === 'BOM Items' && (
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                       {bomCategories.map((category) => (
                         <div key={category.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                           {/* Category Header */}
@@ -3462,7 +3561,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                                   return;
                                 }
 
-                                const response = await fetch('http://localhost:8000/api/fusedai/get-all-labors', {
+                                const response = await fetch('https://chikaai.net/api/fusedai/get-all-labors', {
                                   method: 'POST',
                                   headers: {
                                     'Content-Type': 'application/json',
@@ -4319,20 +4418,20 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
 
                {/* BOM Items Tab */}
                {activeBOMTab === 'BOM Items' && (
-                 <div className="space-y-6">
+                 <div className="space-y-6 max-w-full">
                    {bomCategories.map((category) => (
-                     <div key={category.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                     <div key={category.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden max-w-full">
                        {/* Category Header */}
-                       <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+                       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
                          <div className="flex items-center justify-between">
                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                              {category.name}
                            </h3>
-                           <div className="flex items-center space-x-4 text-sm">
+                           <div className="flex items-center space-x-3 text-sm">
                              <span className="text-gray-600 dark:text-gray-400">
                                {category.itemCount} items
                              </span>
-                             <div className="flex space-x-2">
+                             <div className="flex space-x-1">
                                <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-300 rounded text-xs">
                                  Cost: {formatCurrency(category.totalCost)}
                                </span>
@@ -4345,96 +4444,139 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                        </div>
 
                        {/* Items Table */}
-                       <div className="overflow-x-auto max-w-full">
-                         <table className="w-full min-w-[1200px]">
+                       <div className="overflow-x-auto w-full max-w-full">
+                         <table className="w-full min-w-[700px] lg:min-w-[800px] xl:min-w-[900px]">
                            <thead className="bg-gray-50 dark:bg-gray-700">
                              <tr>
-                               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[200px]">
+                               <th className="px-2 lg:px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[120px] lg:min-w-[140px]">
                                  Description
                                </th>
-                               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[150px]">
+                               <th className="px-2 lg:px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[100px] lg:min-w-[120px]">
                                  Manufacturer / Category
                                </th>
-                               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[80px]">
+                               <th className="px-2 lg:px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[50px]">
                                  Qty
                                </th>
-                               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[80px]">
+                               <th className="px-2 lg:px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[50px]">
                                  Unit
                                </th>
-                               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[100px]">
+                               <th className="px-2 lg:px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[70px] lg:min-w-[80px]">
                                  Cost Price
                                </th>
-                               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[100px]">
+                               <th className="px-2 lg:px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[60px] lg:min-w-[70px]">
                                  Pricing
                                </th>
-                               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[100px]">
+                               <th className="px-2 lg:px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[70px] lg:min-w-[80px]">
                                  Sell Price
                                </th>
-                               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[100px]">
+                               <th className="px-2 lg:px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[70px] lg:min-w-[80px]">
                                  Total Cost
                                </th>
-                               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[100px]">
+                               <th className="px-2 lg:px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[70px] lg:min-w-[80px]">
                                  Total Sell
                                </th>
-                               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[80px]">
+                               <th className="px-2 lg:px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider min-w-[50px]">
                                  Actions
                                </th>
                              </tr>
                            </thead>
                            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                             {bomItems
-                               .filter(item => item.category === category.name)
-                               .map((item) => (
-                                 <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                   <td className="px-3 py-4 text-sm text-gray-900 dark:text-white">
-                                     <div className="max-w-[200px] truncate" title={item.description}>
-                                       {item.description}
+                             {getPaginatedBOMItems(bomItems, category.name).map((item) => (
+                               <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                 <td className="px-2 lg:px-3 py-3 lg:py-4 text-sm text-gray-900 dark:text-white">
+                                   <div className="max-w-[100px] lg:max-w-[120px] truncate" title={item.description}>
+                                     {item.description}
+                                   </div>
+                                 </td>
+                                 <td className="px-2 lg:px-3 py-3 lg:py-4">
+                                   <div className="max-w-[80px] lg:max-w-[100px]">
+                                     <div className="text-sm text-gray-900 dark:text-white truncate" title={item.manufacturer || 'N/A'}>
+                                       {item.manufacturer || 'N/A'}
                                      </div>
-                                   </td>
-                                   <td className="px-3 py-4">
-                                     <div className="max-w-[150px]">
-                                       <div className="text-sm text-gray-900 dark:text-white truncate" title={item.manufacturer || 'N/A'}>
-                                         {item.manufacturer || 'N/A'}
-                                       </div>
-                                       <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={item.category}>
-                                         {item.category}
-                                       </div>
+                                     <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={item.category}>
+                                       {item.category}
                                      </div>
-                                   </td>
-                                   <td className="px-3 py-4 text-sm text-gray-900 dark:text-white">
-                                     {item.quantity.toFixed(3)}
-                                   </td>
-                                   <td className="px-3 py-4 text-sm text-gray-900 dark:text-white">
-                                     {item.unit}
-                                   </td>
-                                   <td className="px-3 py-4 text-sm text-gray-900 dark:text-white">
-                                     {formatCurrency(item.unitPrice)}
-                                   </td>
-                                   <td className="px-3 py-4 text-sm text-gray-900 dark:text-white">
-                                     Margin {item.margin}%
-                                   </td>
-                                   <td className="px-3 py-4 text-sm text-gray-900 dark:text-white">
-                                     {formatCurrency(item.totalSell / item.quantity)}
-                                   </td>
-                                   <td className="px-3 py-4 text-sm text-gray-900 dark:text-white">
-                                     {formatCurrency(item.totalCost)}
-                                   </td>
-                                   <td className="px-3 py-4 text-sm text-gray-900 dark:text-white">
-                                     {formatCurrency(item.totalSell)}
-                                   </td>
-                                   <td className="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
-                                     <button
-                                       onClick={() => handleDeleteBOMItem(item.id)}
-                                       className="text-red-600 hover:text-red-900 dark:hover:text-red-400"
-                                     >
-                                       <Trash2 className="w-4 h-4" />
-                                     </button>
-                                   </td>
-                                 </tr>
-                               ))}
+                                   </div>
+                                 </td>
+                                 <td className="px-2 lg:px-3 py-3 lg:py-4 text-sm text-gray-900 dark:text-white">
+                                   {item.quantity.toFixed(3)}
+                                 </td>
+                                 <td className="px-2 lg:px-3 py-3 lg:py-4 text-sm text-gray-900 dark:text-white">
+                                   {item.unit}
+                                 </td>
+                                 <td className="px-2 lg:px-3 py-3 lg:py-4 text-sm text-gray-900 dark:text-white">
+                                   {formatCurrency(item.unitPrice)}
+                                 </td>
+                                 <td className="px-2 lg:px-3 py-3 lg:py-4 text-sm text-gray-900 dark:text-white">
+                                   <span className="hidden lg:inline">Margin </span>{item.margin}%
+                                 </td>
+                                 <td className="px-2 lg:px-3 py-3 lg:py-4 text-sm text-gray-900 dark:text-white">
+                                   {formatCurrency(item.totalSell / item.quantity)}
+                                 </td>
+                                 <td className="px-2 lg:px-3 py-3 lg:py-4 text-sm text-gray-900 dark:text-white">
+                                   {formatCurrency(item.totalCost)}
+                                 </td>
+                                 <td className="px-2 lg:px-3 py-3 lg:py-4 text-sm text-gray-900 dark:text-white">
+                                   {formatCurrency(item.totalSell)}
+                                 </td>
+                                 <td className="px-2 lg:px-3 py-3 lg:py-4 text-sm text-gray-500 dark:text-gray-400">
+                                   <button
+                                     onClick={() => handleDeleteBOMItem(item.id)}
+                                     className="text-red-600 hover:text-red-900 dark:hover:text-red-400"
+                                   >
+                                     <Trash2 className="w-4 h-4" />
+                                   </button>
+                                 </td>
+                               </tr>
+                             ))}
                            </tbody>
                          </table>
                        </div>
+                       
+                       {/* Pagination Controls */}
+                       {getTotalBOMPages(bomItems, category.name) > 1 && (
+                         <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
+                           <div className="flex items-center justify-between">
+                             <div className="flex items-center space-x-2">
+                               <span className="text-sm text-gray-700 dark:text-gray-300">
+                                 Items per page:
+                               </span>
+                               <select
+                                 value={bomItemsPerPage}
+                                 onChange={(e) => {
+                                   setBomItemsPerPage(Number(e.target.value));
+                                   setCurrentBOMPage(1);
+                                 }}
+                                 className="text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                               >
+                                 <option value={5}>5</option>
+                                 <option value={10}>10</option>
+                                 <option value={20}>20</option>
+                                 <option value={50}>50</option>
+                               </select>
+                             </div>
+                             <div className="flex items-center space-x-2">
+                               <button
+                                 onClick={() => setCurrentBOMPage(Math.max(1, currentBOMPage - 1))}
+                                 disabled={currentBOMPage === 1}
+                                 className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                               >
+                                 Previous
+                               </button>
+                               <span className="text-sm text-gray-700 dark:text-gray-300">
+                                 Page {currentBOMPage} of {getTotalBOMPages(bomItems, category.name)}
+                               </span>
+                               <button
+                                 onClick={() => setCurrentBOMPage(Math.min(getTotalBOMPages(bomItems, category.name), currentBOMPage + 1))}
+                                 disabled={currentBOMPage === getTotalBOMPages(bomItems, category.name)}
+                                 className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                               >
+                                 Next
+                               </button>
+                             </div>
+                           </div>
+                         </div>
+                       )}
                      </div>
                    ))}
 
@@ -5366,7 +5508,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                                    return;
                                  }
 
-                                 const response = await fetch('http://localhost:8000/api/fusedai/get-all-labors', {
+                                 const response = await fetch('https://chikaai.net/api/fusedai/get-all-labors', {
                                    method: 'POST',
                                    headers: {
                                      'Content-Type': 'application/json',

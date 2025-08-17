@@ -91,7 +91,7 @@ export default function CreateProjectPage() {
           return;
         }
 
-        const response = await fetch('http://localhost:8000/api/fusedai/get-all-customers', {
+        const response = await fetch('https://chikaai.net/api/fusedai/get-all-customers', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -125,7 +125,7 @@ export default function CreateProjectPage() {
           return;
         }
 
-        const response = await fetch('http://localhost:8000/api/fusedai/get-all-contacts', {
+        const response = await fetch('https://chikaai.net/api/fusedai/get-all-contacts', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -204,7 +204,7 @@ export default function CreateProjectPage() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/create-project', {
+      const response = await fetch('https://chikaai.net/api/fusedai/create-project', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -293,7 +293,7 @@ export default function CreateProjectPage() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/create-customer', {
+      const response = await fetch('https://chikaai.net/api/fusedai/create-customer', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -324,7 +324,7 @@ export default function CreateProjectPage() {
         // Close modal
         setShowCustomerModal(false);
         // Refresh customers list and auto-select the newly created customer
-        const customersResponse = await fetch('http://localhost:8000/api/fusedai/get-all-customers', {
+        const customersResponse = await fetch('https://chikaai.net/api/fusedai/get-all-customers', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -374,7 +374,7 @@ export default function CreateProjectPage() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/create-contact', {
+      const response = await fetch('https://chikaai.net/api/fusedai/create-contact', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -409,7 +409,7 @@ export default function CreateProjectPage() {
         // Close modal
         setShowContactModal(false);
         // Refresh contacts list and auto-select the newly created contact
-        const contactsResponse = await fetch('http://localhost:8000/api/fusedai/get-all-contacts', {
+        const contactsResponse = await fetch('https://chikaai.net/api/fusedai/get-all-contacts', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

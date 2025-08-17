@@ -18,9 +18,11 @@ import {
   Minimize2,
   Maximize2,
   Trash2,
-  MapPin
+  MapPin,
+  LogOut
 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '@/components/theme-provider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -53,6 +55,7 @@ export default function ProjectsPage() {
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
   const { toast } = useToast();
+  const router = useRouter();
 
   // Extract unique dates and companies from projects data
   const uniqueDates = [...new Set(projects.map(project => {
@@ -77,7 +80,7 @@ export default function ProjectsPage() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/delete-project', {
+      const response = await fetch('https://chikaai.net/api/fusedai/delete-project', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -124,6 +127,20 @@ export default function ProjectsPage() {
     setProjectToDelete(null);
   };
 
+  const handleSignOut = () => {
+    // Clear session storage
+    localStorage.removeItem('token');
+    
+    // Show sign out message
+    toast({
+      title: "Success",
+      description: "Signed out successfully"
+    });
+
+    // Redirect to home page
+    router.push('/');
+  };
+
   useEffect(() => {
     const fetchProjects = async () => {
       try {
@@ -134,7 +151,7 @@ export default function ProjectsPage() {
           return;
         }
 
-        const response = await fetch('http://localhost:8000/api/fusedai/get-all-projects', {
+        const response = await fetch('https://chikaai.net/api/fusedai/get-all-projects', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -267,9 +284,13 @@ export default function ProjectsPage() {
             {/* Actions */}
             <div className="flex items-center space-x-4">
               <ThemeToggle />
-              <Link href="/login" className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors">
-                Sign In
-              </Link>
+              <button
+                onClick={handleSignOut}
+                className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 rounded-md transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sign out</span>
+              </button>
             </div>
           </div>
         </div>

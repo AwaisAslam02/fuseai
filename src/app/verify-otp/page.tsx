@@ -71,7 +71,7 @@ export default function VerifyOTPPage() {
       }
 
       // Make API call
-      const response = await fetch('http://localhost:8000/api/fusedai/verify-otp', {
+      const response = await fetch('https://chikaai.net/api/fusedai/verify-otp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -139,7 +139,7 @@ export default function VerifyOTPPage() {
       }
 
       // Make API call
-      const response = await fetch('http://localhost:8000/api/fusedai/resend-otp', {
+      const response = await fetch('https://chikaai.net/api/fusedai/resend-otp', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

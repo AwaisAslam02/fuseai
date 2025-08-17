@@ -122,7 +122,7 @@ export default function PlansPage() {
         };
 
         // Make API call
-        const response = await fetch('http://localhost:8000/api/fusedai/plan-selection', {
+        const response = await fetch('https://chikaai.net/api/fusedai/plan-selection', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

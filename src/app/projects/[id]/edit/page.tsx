@@ -98,7 +98,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
           return;
         }
 
-        const response = await fetch('http://localhost:8000/api/fusedai/get-all-customers', {
+        const response = await fetch('https://chikaai.net/api/fusedai/get-all-customers', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -130,7 +130,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
           return;
         }
 
-        const response = await fetch('http://localhost:8000/api/fusedai/get-all-contacts', {
+        const response = await fetch('https://chikaai.net/api/fusedai/get-all-contacts', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -191,7 +191,7 @@ export default function EditProjectPage({ params }: { params: Promise<{ id: stri
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/fusedai/update-project', {
+      const response = await fetch('https://chikaai.net/api/fusedai/update-project', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
