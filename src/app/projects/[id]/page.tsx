@@ -5,6 +5,8 @@ import { motion } from 'framer-motion';
 import { 
   ArrowLeft, 
   Edit3, 
+  Edit,
+  Check,
   MessageCircle, 
   Eye, 
   FileText, 
@@ -196,6 +198,24 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
   const [error, setError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState('Project Chat');
   const [activeQuoteTab, setActiveQuoteTab] = useState('Customer Setup');
+  const [isEditingAISections, setIsEditingAISections] = useState(false);
+  const [aiScopeOfWork, setAiScopeOfWork] = useState('This section will contain the detailed scope of work for the project, including all deliverables, milestones, and technical requirements.');
+  const [aiAssumptions, setAiAssumptions] = useState('This section will outline the key assumptions made during the project planning and estimation process.');
+  const [aiExclusions, setAiExclusions] = useState('This section will clearly define what is not included in the project scope and quote.');
+  const [aiAdditionalNotes, setAiAdditionalNotes] = useState('This section will contain any additional notes, special considerations, or important information for the project.');
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [bomPricingConfig, setBomPricingConfig] = useState({
+    type: 'Margin',
+    percentage: 35,
+    applyTo: 'Materials Only',
+    customAdjustment: 0,
+    adjustmentDescription: ''
+  });
+  const [isLoadingPricing, setIsLoadingPricing] = useState(false);
+  const [isSavingPricing, setIsSavingPricing] = useState(false);
+  const [allPricingData, setAllPricingData] = useState<any[]>([]);
+  const [isCreatePricingModalOpen, setIsCreatePricingModalOpen] = useState(false);
+  const [selectedPricingId, setSelectedPricingId] = useState<string>('');
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(true);
   const [documentSearch, setDocumentSearch] = useState('');
   const [projectId, setProjectId] = useState<string>('');
@@ -979,7 +999,8 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           part_number: newItem.partNumber || '',
           manufacturer: newItem.manufacturer || '',
           model_number: newItem.modelNumber || '',
-          notes: newItem.notes || ''
+          notes: newItem.notes || '',
+          pricing_id: selectedPricingId || null
         })
       });
 
@@ -1368,6 +1389,22 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       setProjectImage(projectRelatedData.image_url);
     }
   }, [projectRelatedData]);
+
+  // Fetch pricing data when Pricing tab is accessed
+  useEffect(() => {
+    if (activeBOMTab === 'Pricing' && projectId) {
+      fetchAllPricing();
+    }
+  }, [activeBOMTab, projectId]);
+
+  // Fetch pricing data when BOM Item modal opens
+  useEffect(() => {
+    if (isAddItemModalOpen && projectId) {
+      fetchAllPricing();
+    }
+  }, [isAddItemModalOpen, projectId]);
+
+
 
   const handleSendMessage = async () => {
     if (!input.trim()) return;
@@ -2027,11 +2064,165 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     }
   };
 
-  const handlePreviewAndGenerate = async () => {
+
+
+  const handleSaveBOMPricing = async () => {
     try {
-      setIsGeneratingQuote(true);
-      setShowMagicAnimation(true);
-      setQuoteContent('');
+      setIsSavingPricing(true);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "Authentication token not found. Please log in again."
+        });
+        return;
+      }
+
+      const response = await fetch('https://chikaai.net/api/fusedai/create-pricing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': token
+        },
+        body: JSON.stringify({
+          project_id: parseInt(projectId),
+          pricing_type: bomPricingConfig.type,
+          percentage: String(bomPricingConfig.percentage),
+          apply_to: bomPricingConfig.applyTo,
+          custom_adjustment: String(bomPricingConfig.customAdjustment),
+          adjustment_description: bomPricingConfig.adjustmentDescription
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "BOM pricing configuration saved successfully"
+        });
+        // Refresh pricing data
+        fetchAllPricing();
+      } else {
+        throw new Error(data.message || 'Failed to save pricing configuration');
+      }
+    } catch (error) {
+      console.error('Error saving pricing configuration:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to save pricing configuration. Please try again."
+      });
+    } finally {
+      setIsSavingPricing(false);
+    }
+  };
+
+  const handleCreatePricingFromBOM = async () => {
+    try {
+      setIsSavingPricing(true);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "Authentication token not found. Please log in again."
+        });
+        return;
+      }
+
+      const response = await fetch('https://chikaai.net/api/fusedai/create-pricing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': token
+        },
+        body: JSON.stringify({
+          project_id: parseInt(projectId),
+          pricing_type: bomPricingConfig.type,
+          percentage: String(bomPricingConfig.percentage),
+          apply_to: bomPricingConfig.applyTo,
+          custom_adjustment: String(bomPricingConfig.customAdjustment),
+          adjustment_description: bomPricingConfig.adjustmentDescription
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Pricing configuration created successfully"
+        });
+        // Refresh pricing data and close modal
+        await fetchAllPricing();
+        setIsCreatePricingModalOpen(false);
+        // Set the newly created pricing as selected
+        if (data.pricing_id) {
+          setSelectedPricingId(data.pricing_id);
+        }
+      } else {
+        throw new Error(data.message || 'Failed to create pricing configuration');
+      }
+    } catch (error) {
+      console.error('Error creating pricing configuration:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to create pricing configuration. Please try again."
+      });
+    } finally {
+      setIsSavingPricing(false);
+    }
+  };
+
+  const fetchAllPricing = async () => {
+    try {
+      setIsLoadingPricing(true);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        return;
+      }
+
+      const response = await fetch('https://chikaai.net/api/fusedai/get-all-pricing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': token
+        }
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Store all pricing data
+        setAllPricingData(data.pricing || []);
+        
+        // Find pricing for current project
+        const projectPricing = data.pricing?.find((p: any) => p.project_id === parseInt(projectId));
+        if (projectPricing) {
+          setBomPricingConfig({
+            type: projectPricing.pricing_type,
+            percentage: projectPricing.percentage,
+            applyTo: projectPricing.apply_to,
+            customAdjustment: projectPricing.custom_adjustment,
+            adjustmentDescription: projectPricing.adjustment_description || ''
+          });
+        }
+      } else {
+        console.error('Failed to fetch pricing:', data.message);
+      }
+    } catch (error) {
+      console.error('Error fetching pricing:', error);
+    } finally {
+      setIsLoadingPricing(false);
+    }
+  };
+
+  const handleGenerateWithAI = async () => {
+    try {
+      setIsGeneratingAI(true);
 
       const token = localStorage.getItem('token');
       if (!token) {
@@ -2051,17 +2242,6 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       const customItemsData = sessionStorage.getItem('quoteCustomItems');
       const customItems = customItemsData ? JSON.parse(customItemsData) : [];
 
-      // Prepare customer data from project
-      const customerData = {
-        project_name: project.title,
-        project_description: project.description,
-        customer_name: project.company,
-        contact_name: project.contact?.name || '',
-        contact_email: project.contact?.email || '',
-        contact_phone: project.contact?.phone || '',
-        project_address: project.date || '' // Using date as placeholder since address isn't in the interface
-      };
-
       const response = await fetch('https://chikaai.net/api/fusedai/preview-and-generate-report', {
         method: 'POST',
         headers: {
@@ -2078,24 +2258,30 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       const data = await response.json();
 
       if (response.ok) {
-        setQuoteContent(data.quote_content);
+        // Update AI sections with the response data
+        if (data.sections) {
+          setAiScopeOfWork(data.sections.scope_of_work || 'No scope of work generated.');
+          setAiAssumptions(data.sections.assumptions || 'No assumptions generated.');
+          setAiExclusions(data.sections.exclusions || 'No exclusions generated.');
+          setAiAdditionalNotes(data.sections.additional_notes || 'No additional notes generated.');
+        }
+        
         toast({
           title: "Success",
-          description: "Quote generated successfully"
+          description: "AI sections generated successfully"
         });
       } else {
-        throw new Error(data.message || 'Failed to generate quote');
+        throw new Error(data.message || 'Failed to generate AI sections');
       }
     } catch (error) {
-      console.error('Error generating quote:', error);
+      console.error('Error generating AI sections:', error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to generate quote. Please try again."
+        description: "Failed to generate AI sections. Please try again."
       });
     } finally {
-      setIsGeneratingQuote(false);
-      setShowMagicAnimation(false);
+      setIsGeneratingAI(false);
     }
   };
 
@@ -2264,6 +2450,27 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
               </div>
             `).join('')}
           ` : ''}
+
+          <!-- AI-Generated Sections -->
+          <div class="section-title">Scope of Work</div>
+          <div style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-left: 4px solid #2563eb;">
+            <p style="margin: 0; line-height: 1.6; color: #333;">${aiScopeOfWork}</p>
+          </div>
+
+          <div class="section-title">Assumptions</div>
+          <div style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-left: 4px solid #28a745;">
+            <p style="margin: 0; line-height: 1.6; color: #333;">${aiAssumptions}</p>
+          </div>
+
+          <div class="section-title">Exclusions</div>
+          <div style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-left: 4px solid #dc3545;">
+            <p style="margin: 0; line-height: 1.6; color: #333;">${aiExclusions}</p>
+          </div>
+
+          <div class="section-title">Additional Notes</div>
+          <div style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-left: 4px solid #ffc107;">
+            <p style="margin: 0; line-height: 1.6; color: #333;">${aiAdditionalNotes}</p>
+          </div>
 
           <div class="total-section">
             ${laborTypes.length > 0 ? `
@@ -2885,7 +3092,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
             <div className="max-w-6xl mx-auto space-y-6 w-full">
               {/* Tabs */}
               <div className="flex space-x-4 overflow-x-auto pb-4">
-                {['Customer Setup', 'BOM Items', 'Labor Types', 'Custom Items', 'Preview & Generate'].map((tab) => (
+                {['Customer Setup', 'BOM Items', 'Labor Types', 'Custom Items', 'Generate with AI', 'Preview'].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setActiveQuoteTab(tab)}
@@ -3272,6 +3479,16 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                     >
                       Categories
                     </button>
+                    <button
+                      onClick={() => setActiveBOMTab('Pricing')}
+                      className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                        activeBOMTab === 'Pricing'
+                          ? 'border-black dark:border-white text-black dark:text-white'
+                          : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      Pricing
+                    </button>
                   </div>
 
                   {/* BOM Items Tab */}
@@ -3519,6 +3736,171 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                           </button>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Pricing Tab */}
+                  {activeBOMTab === 'Pricing' && (
+                    <div className="space-y-6">
+                      {/* Loading State */}
+                      {isLoadingPricing && (
+                        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                          <div className="flex items-center justify-center space-x-3">
+                            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                            <span className="text-gray-700 dark:text-gray-300">Loading pricing configuration...</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pricing Configuration */}
+                      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
+                          BOM Pricing Configuration
+                        </h3>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {/* Type Dropdown */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                              Type
+                            </label>
+                            <Select 
+                              value={bomPricingConfig.type} 
+                              onValueChange={(value) => setBomPricingConfig(prev => ({ ...prev, type: value }))}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Margin">Margin</SelectItem>
+                                <SelectItem value="Materials">Materials</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Percentage */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                              Percentage (%)
+                            </label>
+                            <input
+                              type="number"
+                              value={bomPricingConfig.percentage}
+                              onChange={(e) => setBomPricingConfig(prev => ({ ...prev, percentage: parseFloat(e.target.value) || 0 }))}
+                              min="0"
+                              max="100"
+                              step="0.01"
+                              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                            />
+                          </div>
+
+                          {/* Apply To Dropdown */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                              Apply To
+                            </label>
+                            <Select 
+                              value={bomPricingConfig.applyTo} 
+                              onValueChange={(value) => setBomPricingConfig(prev => ({ ...prev, applyTo: value }))}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select apply to" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Materials Only">Materials Only</SelectItem>
+                                <SelectItem value="Margin">Margin</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Custom Adjustment */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                              Custom Adjustment ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={bomPricingConfig.customAdjustment}
+                              onChange={(e) => setBomPricingConfig(prev => ({ ...prev, customAdjustment: parseFloat(e.target.value) || 0 }))}
+                              min="0"
+                              step="0.01"
+                              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Adjustment Description */}
+                        <div className="mt-6">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Adjustment Description
+                          </label>
+                          <textarea
+                            value={bomPricingConfig.adjustmentDescription}
+                            onChange={(e) => setBomPricingConfig(prev => ({ ...prev, adjustmentDescription: e.target.value }))}
+                            placeholder="Enter description for the custom adjustment..."
+                            rows={3}
+                            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white resize-none"
+                          />
+                        </div>
+
+                        {/* Save Button */}
+                        <div className="mt-6">
+                          <button
+                            onClick={handleSaveBOMPricing}
+                            disabled={isSavingPricing}
+                            className={`px-6 py-2 rounded-lg transition-colors font-medium flex items-center space-x-2 ${
+                              isSavingPricing
+                                ? 'bg-gray-400 text-white cursor-not-allowed'
+                                : 'bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200'
+                            }`}
+                          >
+                            {isSavingPricing ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                <span>Saving...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Save className="w-4 h-4" />
+                                <span>Save Pricing Configuration</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Current Configuration Summary */}
+                      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                          Current Configuration Summary
+                        </h3>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                            <h4 className="font-medium text-gray-900 dark:text-white mb-2">Pricing Type</h4>
+                            <p className="text-gray-600 dark:text-gray-300">{bomPricingConfig.type}</p>
+                          </div>
+                          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                            <h4 className="font-medium text-gray-900 dark:text-white mb-2">Percentage</h4>
+                            <p className="text-gray-600 dark:text-gray-300">{bomPricingConfig.percentage}%</p>
+                          </div>
+                          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                            <h4 className="font-medium text-gray-900 dark:text-white mb-2">Apply To</h4>
+                            <p className="text-gray-600 dark:text-gray-300">{bomPricingConfig.applyTo}</p>
+                          </div>
+                          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                            <h4 className="font-medium text-gray-900 dark:text-white mb-2">Custom Adjustment</h4>
+                            <p className="text-gray-600 dark:text-gray-300">${bomPricingConfig.customAdjustment.toFixed(2)}</p>
+                          </div>
+                        </div>
+                        
+                        {bomPricingConfig.adjustmentDescription && (
+                          <div className="mt-4 bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                            <h4 className="font-medium text-gray-900 dark:text-white mb-2">Adjustment Description</h4>
+                            <p className="text-gray-600 dark:text-gray-300">{bomPricingConfig.adjustmentDescription}</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -3877,152 +4259,248 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                 </div>
               )}
 
-              {activeQuoteTab === 'Preview & Generate' && (
+              {activeQuoteTab === 'Generate with AI' && (
                 <div className="space-y-6">
-                  {/* Generate Quote Button */}
-                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                      Generate Quote Report
+                  {/* Header with Generate and Edit Buttons */}
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                      AI-Generated Quote Sections
                     </h3>
-                    <p className="text-gray-600 dark:text-gray-400 mb-6">
-                      Generate a comprehensive quote report including all selected labor types, custom items, and project details.
-                    </p>
-                    
-                    <button
-                      onClick={handlePreviewAndGenerate}
-                      disabled={isGeneratingQuote}
-                      className={`px-6 py-3 rounded-lg font-medium transition-colors flex items-center space-x-2 ${
-                        isGeneratingQuote
-                          ? 'bg-gray-400 text-white cursor-not-allowed'
-                          : 'bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200'
-                      }`}
-                    >
-                      {isGeneratingQuote ? (
-                        <>
-                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          <span>Generating Quote...</span>
-                        </>
-                      ) : (
-                        <>
-                          <FileText className="w-5 h-5" />
-                          <span>Preview & Generate</span>
-                        </>
-                      )}
-                    </button>
+                    <div className="flex space-x-3">
+                      <button
+                        onClick={handleGenerateWithAI}
+                        disabled={isGeneratingAI}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2 ${
+                          isGeneratingAI
+                            ? 'bg-gray-400 text-white cursor-not-allowed'
+                            : 'bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200'
+                        }`}
+                      >
+                        {isGeneratingAI ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span>Generating...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Brain className="w-4 h-4" />
+                            <span>Generate with AI</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setIsEditingAISections(!isEditingAISections)}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2 ${
+                          isEditingAISections
+                            ? 'bg-green-600 hover:bg-green-700 text-white'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                      >
+                        {isEditingAISections ? (
+                          <>
+                            <Check className="w-4 h-4" />
+                            <span>Save</span>
+                          </>
+                        ) : (
+                          <>
+                            <Edit className="w-4 h-4" />
+                            <span>Edit</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Quote Content Display */}
-                  {quoteContent && (
-                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                        Generated Quote Report
-                      </h3>
-                      
-                      {/* PDF Preview - Shown by default */}
-                      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-96 overflow-y-auto">
-                        <div className="bg-white p-6 rounded-lg shadow-sm">
-                          <div className="text-center border-b-2 border-gray-300 pb-4 mb-6">
-                            <div className="text-2xl font-bold text-blue-600 mb-1">FusedAI</div>
-                            <div className="text-lg text-gray-600 mb-2">Generated Quote Report</div>
-                            <div className="text-sm text-gray-500">Generated on: {new Date().toLocaleDateString()}</div>
-                          </div>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                            <div>
-                              <h4 className="font-semibold text-gray-900 mb-2">Project Details</h4>
-                              <p className="text-sm text-gray-600"><strong>Project:</strong> {project.title}</p>
-                              <p className="text-sm text-gray-600"><strong>Description:</strong> {project.description || 'N/A'}</p>
-                              <p className="text-sm text-gray-600"><strong>Status:</strong> {project.status}</p>
-                            </div>
-                            <div>
-                              <h4 className="font-semibold text-gray-900 mb-2">Customer Information</h4>
-                              <p className="text-sm text-gray-600"><strong>Company:</strong> {project.company || 'N/A'}</p>
-                              <p className="text-sm text-gray-600"><strong>Contact:</strong> {project.contact?.name || 'N/A'}</p>
-                              <p className="text-sm text-gray-600"><strong>Email:</strong> {project.contact?.email || 'N/A'}</p>
-                              <p className="text-sm text-gray-600"><strong>Phone:</strong> {project.contact?.phone || 'N/A'}</p>
-                            </div>
-                          </div>
-
-                          <div className="mb-6">
-                            <h4 className="font-semibold text-gray-900 mb-3">Generated Quote Content</h4>
-                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                              <pre className="whitespace-pre-wrap text-xs text-gray-800 font-mono leading-relaxed">
-                                {quoteContent}
-                              </pre>
-                            </div>
-                          </div>
-
-                          <div className="border-t-2 border-gray-300 pt-4">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                              <div className="text-center">
-                                <div className="text-xl font-bold text-blue-600">
-                                  {(() => {
-                                    try {
-                                      const laborData = sessionStorage.getItem('quoteLaborTypes');
-                                      return laborData ? JSON.parse(laborData).length : 0;
-                                    } catch {
-                                      return 0;
-                                    }
-                                  })()}
-                                </div>
-                                <div className="text-sm text-gray-600">Labor Types</div>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-xl font-bold text-green-600">
-                                  {(() => {
-                                    try {
-                                      const customData = sessionStorage.getItem('quoteCustomItems');
-                                      return customData ? JSON.parse(customData).length : 0;
-                                    } catch {
-                                      return 0;
-                                    }
-                                  })()}
-                                </div>
-                                <div className="text-sm text-gray-600">Custom Items</div>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-lg font-semibold text-gray-900">
-                                  {project.title.length > 15 ? project.title.substring(0, 15) + '...' : project.title}
-                                </div>
-                                <div className="text-sm text-gray-600">Project</div>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="text-center mt-6 text-sm text-gray-500">
-                            <p>Thank you for choosing FusedAI for your project needs.</p>
-                            <p>This quote is valid for 30 days from the date of generation.</p>
-                          </div>
-                        </div>
+                  {/* Scope of Work Section */}
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                    <h4 className="text-md font-semibold text-gray-900 dark:text-white mb-4">Scope of Work</h4>
+                    {isEditingAISections ? (
+                      <textarea
+                        value={aiScopeOfWork}
+                        onChange={(e) => setAiScopeOfWork(e.target.value)}
+                        className="w-full h-32 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Enter the scope of work..."
+                      />
+                    ) : (
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                        <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{aiScopeOfWork}</p>
                       </div>
+                    )}
+                  </div>
 
-                      <div className="mt-4 flex flex-wrap gap-3">
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(quoteContent);
-                            toast({
-                              title: "Success",
-                              description: "Quote content copied to clipboard"
-                            });
-                          }}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium flex items-center space-x-2"
-                        >
-                          <Copy className="w-4 h-4" />
-                          <span>Copy to Clipboard</span>
-                        </button>
-                        <button
-                          onClick={generatePDF}
-                          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium flex items-center space-x-2"
-                        >
-                          <Download className="w-4 h-4" />
-                          <span>Download PDF</span>
-                        </button>
-
+                  {/* Assumptions Section */}
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                    <h4 className="text-md font-semibold text-gray-900 dark:text-white mb-4">Assumptions</h4>
+                    {isEditingAISections ? (
+                      <textarea
+                        value={aiAssumptions}
+                        onChange={(e) => setAiAssumptions(e.target.value)}
+                        className="w-full h-32 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Enter the assumptions..."
+                      />
+                    ) : (
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                        <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{aiAssumptions}</p>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
+
+                  {/* Exclusions Section */}
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                    <h4 className="text-md font-semibold text-gray-900 dark:text-white mb-4">Exclusions</h4>
+                    {isEditingAISections ? (
+                      <textarea
+                        value={aiExclusions}
+                        onChange={(e) => setAiExclusions(e.target.value)}
+                        className="w-full h-32 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Enter the exclusions..."
+                      />
+                    ) : (
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                        <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{aiExclusions}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Additional Notes Section */}
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                    <h4 className="text-md font-semibold text-gray-900 dark:text-white mb-4">Additional Notes</h4>
+                    {isEditingAISections ? (
+                      <textarea
+                        value={aiAdditionalNotes}
+                        onChange={(e) => setAiAdditionalNotes(e.target.value)}
+                        className="w-full h-32 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Enter additional notes..."
+                      />
+                    ) : (
+                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                        <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{aiAdditionalNotes}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
+
+                            {activeQuoteTab === 'Preview' && (
+                <div className="space-y-6">
+                  {/* PDF Preview Header */}
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        Quote Report Preview
+                      </h3>
+                      <button
+                        onClick={generatePDF}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium flex items-center space-x-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Download PDF</span>
+                      </button>
+                    </div>
+                    
+                    {/* PDF Preview Content */}
+                    <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-96 overflow-y-auto">
+                      <div className="bg-white p-6 rounded-lg shadow-sm">
+                        <div className="text-center border-b-2 border-gray-300 pb-4 mb-6">
+                          <div className="text-2xl font-bold text-blue-600 mb-1">FusedAI</div>
+                          <div className="text-lg text-gray-600 mb-2">Professional Quote Report</div>
+                          <div className="text-sm text-gray-500">Generated on: {new Date().toLocaleDateString()}</div>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                          <div>
+                            <h4 className="font-semibold text-gray-900 mb-2">Project Details</h4>
+                            <p className="text-sm text-gray-600"><strong>Project:</strong> {project.title}</p>
+                            <p className="text-sm text-gray-600"><strong>Description:</strong> {project.description || 'N/A'}</p>
+                            <p className="text-sm text-gray-600"><strong>Status:</strong> {project.status}</p>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-gray-900 mb-2">Customer Information</h4>
+                            <p className="text-sm text-gray-600"><strong>Company:</strong> {project.company || 'N/A'}</p>
+                            <p className="text-sm text-gray-600"><strong>Contact:</strong> {project.contact?.name || 'N/A'}</p>
+                            <p className="text-sm text-gray-600"><strong>Email:</strong> {project.contact?.email || 'N/A'}</p>
+                            <p className="text-sm text-gray-600"><strong>Phone:</strong> {project.contact?.phone || 'N/A'}</p>
+                          </div>
+                        </div>
+
+                        {/* AI-Generated Sections in PDF Preview */}
+                        <div className="space-y-4 mb-6">
+                          <div>
+                            <h4 className="font-semibold text-gray-900 mb-2 border-b border-gray-300 pb-1">Scope of Work</h4>
+                            <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded">
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{aiScopeOfWork}</p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <h4 className="font-semibold text-gray-900 mb-2 border-b border-gray-300 pb-1">Assumptions</h4>
+                            <div className="bg-green-50 border-l-4 border-green-500 p-3 rounded">
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{aiAssumptions}</p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <h4 className="font-semibold text-gray-900 mb-2 border-b border-gray-300 pb-1">Exclusions</h4>
+                            <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded">
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{aiExclusions}</p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <h4 className="font-semibold text-gray-900 mb-2 border-b border-gray-300 pb-1">Additional Notes</h4>
+                            <div className="bg-yellow-50 border-l-4 border-yellow-500 p-3 rounded">
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{aiAdditionalNotes}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="border-t-2 border-gray-300 pt-4">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="text-center">
+                              <div className="text-xl font-bold text-blue-600">
+                                {(() => {
+                                  try {
+                                    const laborData = sessionStorage.getItem('quoteLaborTypes');
+                                    return laborData ? JSON.parse(laborData).length : 0;
+                                  } catch {
+                                    return 0;
+                                  }
+                                })()}
+                              </div>
+                              <div className="text-sm text-gray-600">Labor Types</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-xl font-bold text-green-600">
+                                {(() => {
+                                  try {
+                                    const customData = sessionStorage.getItem('quoteCustomItems');
+                                    return customData ? JSON.parse(customData).length : 0;
+                                  } catch {
+                                    return 0;
+                                  }
+                                })()}
+                              </div>
+                              <div className="text-sm text-gray-600">Custom Items</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-lg font-semibold text-gray-900">
+                                {project.title.length > 15 ? project.title.substring(0, 15) + '...' : project.title}
+                              </div>
+                              <div className="text-sm text-gray-600">Project</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-center mt-6 text-sm text-gray-500">
+                          <p>Thank you for choosing FusedAI for your project needs.</p>
+                          <p>This quote is valid for 30 days from the date of generation.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
           </div>
         ) : activeSection === 'Overview' ? (
@@ -5947,7 +6425,10 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                     Add a new item to the bill of materials.
                   </h2>
                   <button
-                    onClick={() => setIsAddItemModalOpen(false)}
+                    onClick={() => {
+                      setIsAddItemModalOpen(false);
+                      setSelectedPricingId('');
+                    }}
                     className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                   >
                     <X className="w-6 h-6" />
@@ -6124,12 +6605,49 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white resize-none"
                     />
                   </div>
+
+                  {/* Pricing Selection */}
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Pricing Configuration
+                    </label>
+                    <Select 
+                      value={selectedPricingId} 
+                      onValueChange={(value) => {
+                        if (value === 'create-new') {
+                          setIsCreatePricingModalOpen(true);
+                        } else {
+                          setSelectedPricingId(value);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select pricing configuration or create new" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allPricingData.map((pricing) => (
+                          <SelectItem key={pricing.pricing_id} value={pricing.pricing_id}>
+                            {pricing.pricing_type} - {pricing.percentage}% - {pricing.apply_to}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="create-new" className="text-blue-600 dark:text-blue-400">
+                          + Create New Pricing Configuration
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Select a pricing configuration to apply to this BOM item
+                    </p>
+                  </div>
                 </div>
 
                                  {/* Action Buttons */}
                  <div className="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
                    <button
-                     onClick={() => setIsAddItemModalOpen(false)}
+                     onClick={() => {
+                       setIsAddItemModalOpen(false);
+                       setSelectedPricingId('');
+                     }}
                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                    >
                      Cancel
@@ -6141,6 +6659,145 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                      Add Item
                    </button>
                  </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Create Pricing Modal */}
+        {isCreatePricingModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    Create New Pricing Configuration
+                  </h2>
+                  <button
+                    onClick={() => setIsCreatePricingModalOpen(false)}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Type Dropdown */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Type
+                    </label>
+                    <Select 
+                      value={bomPricingConfig.type} 
+                      onValueChange={(value) => setBomPricingConfig(prev => ({ ...prev, type: value }))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Margin">Margin</SelectItem>
+                        <SelectItem value="Materials">Materials</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Percentage */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Percentage (%)
+                    </label>
+                    <input
+                      type="number"
+                      value={bomPricingConfig.percentage}
+                      onChange={(e) => setBomPricingConfig(prev => ({ ...prev, percentage: parseFloat(e.target.value) || 0 }))}
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                    />
+                  </div>
+
+                  {/* Apply To Dropdown */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Apply To
+                    </label>
+                    <Select 
+                      value={bomPricingConfig.applyTo} 
+                      onValueChange={(value) => setBomPricingConfig(prev => ({ ...prev, applyTo: value }))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select apply to" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Materials Only">Materials Only</SelectItem>
+                        <SelectItem value="Margin">Margin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Custom Adjustment */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Custom Adjustment ($)
+                    </label>
+                    <input
+                      type="number"
+                      value={bomPricingConfig.customAdjustment}
+                      onChange={(e) => setBomPricingConfig(prev => ({ ...prev, customAdjustment: parseFloat(e.target.value) || 0 }))}
+                      min="0"
+                      step="0.01"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Adjustment Description */}
+                <div className="mt-6">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Adjustment Description
+                  </label>
+                  <textarea
+                    value={bomPricingConfig.adjustmentDescription}
+                    onChange={(e) => setBomPricingConfig(prev => ({ ...prev, adjustmentDescription: e.target.value }))}
+                    placeholder="Enter description for the custom adjustment..."
+                    rows={3}
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white resize-none"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                  <button
+                    onClick={() => setIsCreatePricingModalOpen(false)}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreatePricingFromBOM}
+                    disabled={isSavingPricing}
+                    className={`px-4 py-2 rounded-lg transition-colors font-medium flex items-center space-x-2 ${
+                      isSavingPricing
+                        ? 'bg-gray-400 text-white cursor-not-allowed'
+                        : 'bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200'
+                    }`}
+                  >
+                    {isSavingPricing ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Creating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        <span>Create Pricing</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
