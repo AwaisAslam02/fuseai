@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, User, ArrowLeft, Check } from 'lucide-react';
 import Link from 'next/link';
@@ -23,7 +23,141 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+  // Handle OAuth callback URL parameters
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    
+    if (code && state === 'google_signup') {
+      handleGoogleCallback(code);
+    }
+  }, []);
+
+  const handleGoogleCallback = async (code: string) => {
+    setIsGoogleLoading(true);
+    
+    try {
+      // Exchange authorization code for access token
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          client_id: '839908787822-7qd5cbus54ash9a8qcli1kbeml9onc3t.apps.googleusercontent.com',
+          client_secret: '', // You'll need to handle this securely
+          code: code,
+          grant_type: 'authorization_code',
+          redirect_uri: window.location.origin,
+        }),
+      });
+
+      const tokenData = await tokenResponse.json();
+      
+      if (!tokenResponse.ok) {
+        throw new Error('Failed to exchange code for token');
+      }
+
+      // Get user info
+      const userResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+        },
+      });
+
+      const userData = await userResponse.json();
+      
+      if (!userResponse.ok) {
+        throw new Error('Failed to get user info');
+      }
+
+      // Create a mock ID token for your backend
+      const mockIdToken = btoa(JSON.stringify({
+        email: userData.email,
+        given_name: userData.given_name,
+        family_name: userData.family_name,
+        aud: '839908787822-7qd5cbus54ash9a8qcli1kbeml9onc3t.apps.googleusercontent.com',
+      }));
+
+      // Send to your backend
+      const apiResponse = await fetch('https://chikaai.net/api/fusedai/auth/google', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          google_token: mockIdToken
+        }),
+      });
+
+      const data = await apiResponse.json();
+
+      if (!apiResponse.ok) {
+        throw new Error(data.message || 'Google sign-in failed');
+      }
+
+      // Store token
+      localStorage.setItem('token', data.token);
+
+      // Show success message
+      toast({
+        title: "Success",
+        description: data.message || "Google sign-in successful"
+      });
+
+      // Clear URL parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      // Redirect based on backend response
+      if (data.page === 'plan_selection') {
+        router.push('/plan-selection');
+      } else if (data.page === 'chat_page') {
+        router.push('/chat');
+      } else {
+        router.push('/dashboard');
+      }
+
+    } catch (error) {
+      console.error('Google callback error:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Google sign-in failed'
+      });
+      
+      // Clear URL parameters on error
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const handleGoogleButtonClick = () => {
+    setIsGoogleLoading(true);
+
+    const clientId = '839908787822-7qd5cbus54ash9a8qcli1kbeml9onc3t.apps.googleusercontent.com';
+    const redirectUri = window.location.origin;
+    const scope = 'openid email profile';
+    const responseType = 'code';
+    const state = 'google_signup';
+    
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `client_id=${clientId}&` +
+      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+      `scope=${encodeURIComponent(scope)}&` +
+      `response_type=${responseType}&` +
+      `state=${state}&` +
+      `include_granted_scopes=true&` +
+      `access_type=offline&` +
+      `prompt=select_account`;
+
+    // Redirect to Google OAuth
+    window.location.href = googleAuthUrl;
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -71,6 +205,7 @@ export default function SignupPage() {
 
       // Store token in session storage
       localStorage.setItem('token', data.token);
+      sessionStorage.setItem('p1', "true");
 
       // Show success message
       toast({
@@ -134,10 +269,12 @@ export default function SignupPage() {
             <div className="space-y-3">
               <button
                 type="button"
-                className="w-full flex items-center justify-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                onClick={handleGoogleButtonClick}
+                disabled={isGoogleLoading}
+                className="w-full flex items-center justify-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FcGoogle className="w-5 h-5 mr-3" />
-                Continue with Google
+                {isGoogleLoading ? 'Signing in with Google...' : 'Continue with Google'}
               </button>
               
               <button
@@ -149,7 +286,7 @@ export default function SignupPage() {
               </button>
             </div>
 
-                         <div className="relative">
+            <div className="relative">
                <div className="absolute inset-0 flex items-center">
                  <div className="w-full border-t border-gray-300 dark:border-gray-600" />
                </div>
@@ -158,8 +295,8 @@ export default function SignupPage() {
                </div>
              </div>
 
-                          <div className="space-y-2">
-                               <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="firstName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     First name
@@ -168,7 +305,7 @@ export default function SignupPage() {
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <User className="h-5 w-5 text-gray-400" />
                     </div>
-                                         <input
+                    <input
                        id="firstName"
                        name="firstName"
                        type="text"
@@ -190,7 +327,7 @@ export default function SignupPage() {
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <User className="h-5 w-5 text-gray-400" />
                     </div>
-                                         <input
+                    <input
                        id="lastName"
                        name="lastName"
                        type="text"
@@ -353,4 +490,4 @@ export default function SignupPage() {
       </div>
     </div>
   );
-} 
+}

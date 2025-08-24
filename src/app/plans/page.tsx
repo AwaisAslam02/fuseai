@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Check, Star, Zap, Crown } from 'lucide-react';
 import Link from 'next/link';
@@ -15,6 +15,22 @@ export default function PlansPage() {
   const { toast } = useToast();
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Check if p1 and p2 are true in session storage, redirect if not
+  useEffect(() => {
+    const p1 = sessionStorage.getItem('p1');
+    const p2 = sessionStorage.getItem('p2');
+    
+    if (p1 !== 'true') {
+      router.push('/signup');
+      return;
+    }
+    
+    if (p2 !== 'true') {
+      router.push('/verify-otp');
+      return;
+    }
+  }, [router]);
 
   const plans = [
     {
@@ -148,7 +164,7 @@ export default function PlansPage() {
         if (!response.ok) {
           throw new Error(data.detail || data.message || 'Failed to select plan');
         }
-
+        sessionStorage.setItem('p3', "true");
         // Show success message
         toast({
           title: "Success",

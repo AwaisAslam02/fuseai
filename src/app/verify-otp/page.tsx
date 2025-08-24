@@ -20,6 +20,14 @@ export default function VerifyOTPPage() {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [resendCooldown, setResendCooldown] = useState(0);
 
+  // Check if p1 is true in session storage, if not redirect to signup
+  useEffect(() => {
+    const p1 = sessionStorage.getItem('p1');
+    if (p1 !== 'true') {
+      router.push('/signup');
+    }
+  }, [router]);
+
   // Add useEffect for cooldown timer
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -101,7 +109,7 @@ export default function VerifyOTPPage() {
       if (!response.ok) {
         throw new Error(data.detail || data.message || 'Failed to verify OTP');
       }
-
+      sessionStorage.setItem('p2', "true");
       // Show success message
       toast({
         title: "Success",

@@ -2133,6 +2133,14 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
               padding-bottom: 20px;
               margin-bottom: 30px;
             }
+            .logo-container {
+              margin-bottom: 20px;
+            }
+            .logo {
+              max-width: 200px;
+              height: auto;
+              margin-bottom: 20px;
+            }
             .company-name {
               font-size: 28px;
               font-weight: bold;
@@ -2334,6 +2342,34 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       const customItemsData = sessionStorage.getItem('quoteCustomItems');
       const customItems = customItemsData ? JSON.parse(customItemsData) : [];
 
+      // Process the quote content to handle bold text formatting and extract logo
+      const processQuoteContent = (content: string) => {
+        // First, extract logo if present - more flexible regex to match the actual format
+        const logoMatch = content.match(/<img[^>]*src="([^"]*)"[^>]*alt="Company Logo"[^>]*>/i);
+        const logoUrl = logoMatch ? logoMatch[1] : null;
+        
+        // Remove the logo from the content to avoid duplication
+        const contentWithoutLogo = content.replace(/<img[^>]*src="[^"]*"[^>]*alt="Company Logo"[^>]*>/gi, '');
+        
+        // Convert **text** to <strong>text</strong> - handle multiline and complex content
+        let processedContent = contentWithoutLogo;
+        
+        // Process bold text that's not inside HTML tags - more robust pattern
+        processedContent = processedContent.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+        
+        // Clean up any extra whitespace
+        processedContent = processedContent.trim();
+        
+        return { processedContent, logoUrl };
+      };
+
+      const { processedContent, logoUrl } = processQuoteContent(quoteContent);
+      
+      // Debug logging
+      console.log('Logo URL extracted:', logoUrl);
+      console.log('Original content length:', quoteContent.length);
+      console.log('Processed content length:', processedContent.length);
+
       // Create HTML content that includes API content
       const htmlContent = `
         <!DOCTYPE html>
@@ -2354,6 +2390,14 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
               border-bottom: 2px solid #333;
               padding-bottom: 20px;
               margin-bottom: 30px;
+            }
+            .logo-container {
+              margin-bottom: 20px;
+            }
+            .logo {
+              max-width: 200px;
+              height: auto;
+              margin-bottom: 20px;
             }
             .company-name {
               font-size: 28px;
@@ -2380,12 +2424,34 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
               border-radius: 8px;
               padding: 20px;
               margin: 20px 0;
-              white-space: pre-wrap;
-              font-family: 'Courier New', monospace;
-              font-size: 12px;
-              line-height: 1.4;
+              font-family: Arial, sans-serif;
+              font-size: 14px;
+              line-height: 1.6;
               max-height: 400px;
               overflow-y: auto;
+            }
+            .api-content strong {
+              font-weight: bold;
+              color: #2563eb;
+            }
+            .api-content table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 15px 0;
+              font-size: 12px;
+            }
+            .api-content table th,
+            .api-content table td {
+              border: 1px solid #ddd;
+              padding: 8px;
+              text-align: left;
+            }
+            .api-content table th {
+              background-color: #f2f2f2;
+              font-weight: bold;
+            }
+            .api-content table tr:nth-child(even) {
+              background-color: #f9f9f9;
             }
             .summary-section {
               margin-top: 30px;
@@ -2429,6 +2495,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         </head>
         <body>
           <div class="header">
+            ${logoUrl ? `<div class="logo-container"><img src="${logoUrl}" alt="Company Logo" class="logo" /></div>` : ''}
             <div class="company-name">FusedAI</div>
             <div class="quote-title">Generated Quote Report</div>
             <div class="date">Generated on: ${new Date().toLocaleDateString()}</div>
@@ -2451,7 +2518,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           </div>
 
           <h3>Generated Quote Content</h3>
-          <div class="api-content">${quoteContent}</div>
+          <div class="api-content">${processedContent}</div>
 
           <div class="summary-section">
             <h3>Quote Summary</h3>
@@ -3950,13 +4017,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                           <Download className="w-4 h-4" />
                           <span>Download PDF</span>
                         </button>
-                        <button
-                          onClick={generatePdfFromApiContent}
-                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-medium flex items-center space-x-2"
-                        >
-                          <FileText className="w-4 h-4" />
-                          <span>Download PDF with API Content</span>
-                        </button>
+
                       </div>
                     </div>
                   )}

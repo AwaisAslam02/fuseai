@@ -53,6 +53,7 @@ export default function ProjectsPage() {
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [isChatLoading, setIsChatLoading] = useState(false);
 
   const { toast } = useToast();
   const router = useRouter();
@@ -226,9 +227,9 @@ export default function ProjectsPage() {
     return matchesSearch && matchesStatus && matchesDate && matchesCompany;
   });
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (chatMessage.trim()) {
-      const newMessage = {
+      const userMessage = {
         id: chatMessages.length + 1,
         type: 'user' as const,
         message: chatMessage,
@@ -238,23 +239,74 @@ export default function ProjectsPage() {
           hour12: true 
         })
       };
-      setChatMessages([...chatMessages, newMessage]);
+      setChatMessages(prev => [...prev, userMessage]);
+      const currentMessage = chatMessage;
       setChatMessage('');
+      setIsChatLoading(true);
       
-      // Simulate AI response
-      setTimeout(() => {
-        const aiResponse = {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          toast({
+            variant: "destructive",
+            title: "Authentication Error",
+            description: "Authentication token not found. Please log in again."
+          });
+          return;
+        }
+
+        const response = await fetch('https://chikaai.net/api/fusedai/chat-with-all-projects', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': token
+          },
+          body: JSON.stringify({
+            message: currentMessage
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          const aiResponse = {
+            id: chatMessages.length + 2,
+            type: 'ai' as const,
+            message: data.ai_response,
+            timestamp: new Date().toLocaleTimeString('en-US', { 
+              hour: 'numeric', 
+              minute: '2-digit',
+              hour12: true 
+            })
+          };
+          setChatMessages(prev => [...prev, aiResponse]);
+        } else {
+          throw new Error(data.message || 'Failed to get AI response');
+        }
+      } catch (error) {
+        console.error('Error getting AI response:', error);
+        
+        // Add error message to chat
+        const errorResponse = {
           id: chatMessages.length + 2,
           type: 'ai' as const,
-          message: 'I understand your question about the projects. How can I help you further?',
+          message: 'Sorry, I encountered an error while processing your request. Please try again.',
           timestamp: new Date().toLocaleTimeString('en-US', { 
             hour: 'numeric', 
             minute: '2-digit',
             hour12: true 
           })
         };
-        setChatMessages(prev => [...prev, aiResponse]);
-      }, 1000);
+        setChatMessages(prev => [...prev, errorResponse]);
+        
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to get AI response. Please try again."
+        });
+      } finally {
+        setIsChatLoading(false);
+      }
     }
   };
 
@@ -591,7 +643,18 @@ export default function ProjectsPage() {
                                 : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-md'
                             }`}
                           >
-                            <p className="leading-relaxed">{message.message}</p>
+                            <p className="leading-relaxed">
+                              {message.type === 'ai' ? (
+                                message.message.split(/(\*\*.*?\*\*)/).map((part, index) => {
+                                  if (part.startsWith('**') && part.endsWith('**')) {
+                                    return <strong key={index}>{part.slice(2, -2)}</strong>;
+                                  }
+                                  return part;
+                                })
+                              ) : (
+                                message.message
+                              )}
+                            </p>
                             <p className="text-xs opacity-60 mt-1">{message.timestamp}</p>
                           </div>
                           {message.type === 'user' && (
@@ -602,6 +665,24 @@ export default function ProjectsPage() {
                         </div>
                       </div>
                     ))}
+                    
+                    {/* Loading indicator */}
+                    {isChatLoading && (
+                      <div className="flex justify-start">
+                        <div className="flex items-end space-x-2 max-w-[280px]">
+                          <div className="w-5 h-5 bg-black dark:bg-white rounded-full flex items-center justify-center flex-shrink-0">
+                            <MessageCircle className="w-2.5 h-2.5 text-white dark:text-black" />
+                          </div>
+                          <div className="px-3 py-2 rounded-2xl text-xs bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-md">
+                            <div className="flex items-center space-x-1">
+                              <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce"></div>
+                              <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                              <div className="w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Chat Input */}
@@ -619,11 +700,15 @@ export default function ProjectsPage() {
                       </div>
                       <button
                         onClick={handleSendMessage}
-                        disabled={!chatMessage.trim()}
+                        disabled={!chatMessage.trim() || isChatLoading}
                         className="px-3 py-2 bg-black dark:bg-white text-white dark:text-black rounded-full hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                        title="Send message"
+                        title={isChatLoading ? "Processing..." : "Send message"}
                       >
-                        <Send className="w-3.5 h-3.5" />
+                        {isChatLoading ? (
+                          <div className="w-3.5 h-3.5 border-2 border-white dark:border-black border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <Send className="w-3.5 h-3.5" />
+                        )}
                       </button>
                     </div>
                   </div>
