@@ -206,6 +206,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
   const [aiAdditionalNotes, setAiAdditionalNotes] = useState('This section will contain any additional notes, special considerations, or important information for the project.');
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [quoteLogoUrl, setQuoteLogoUrl] = useState<string>('');
+  const [generatedReportData, setGeneratedReportData] = useState<any>(null);
   const [bomPricingConfig, setBomPricingConfig] = useState({
     type: 'Margin',
     percentage: 35,
@@ -3338,6 +3339,9 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       const data = await response.json();
 
       if (response.ok) {
+        // Store the complete API response data for PDF generation
+        setGeneratedReportData(data);
+        
         // Update AI sections with the response data
         if (data.sections) {
           setAiScopeOfWork(data.sections.scope_of_work || 'No scope of work generated.');
@@ -3615,6 +3619,768 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
 
 
 
+
+  const previewQuotePDF = async () => {
+    try {
+      // Check if we have generated report data
+      if (!generatedReportData) {
+        toast({
+          variant: "destructive",
+          title: "No Data Available",
+          description: "Please click 'Generate with AI' first to generate the report data."
+        });
+        return;
+      }
+
+      // Use the stored API response data
+      const reportData = generatedReportData.report_data;
+      const sections = generatedReportData.sections;
+      const logoUrl = sections.logo_url;
+
+      // Get data from session storage for additional context
+      const laborData = sessionStorage.getItem('quoteLaborTypes');
+      const laborTypes = laborData ? JSON.parse(laborData) : [];
+      
+      const customItemsData = sessionStorage.getItem('quoteCustomItems');
+      const customItems = customItemsData ? JSON.parse(customItemsData) : [];
+
+      // Create HTML content for PDF
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Quote - ${reportData.project_data.project_name}</title>
+          <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              margin: 0; 
+              padding: 20px; 
+              line-height: 1.4; 
+              color: #333;
+            }
+            .header { 
+              display: flex; 
+              justify-content: space-between; 
+              align-items: flex-start; 
+              margin-bottom: 30px; 
+              border-bottom: 2px solid #333; 
+              padding-bottom: 20px;
+            }
+            .logo-section { 
+              display: flex; 
+              align-items: center; 
+              gap: 15px;
+            }
+            .logo { 
+              max-width: 80px; 
+              height: auto;
+            }
+            .company-info h1 { 
+              font-size: 24px; 
+              font-weight: bold; 
+              margin: 0 0 5px 0; 
+              color: #2563eb;
+            }
+            .company-info h2 { 
+              font-size: 14px; 
+              font-weight: normal; 
+              margin: 0; 
+              color: #666;
+            }
+            .quote-header { 
+              text-align: right;
+            }
+            .quote-header h1 { 
+              font-size: 32px; 
+              font-weight: bold; 
+              margin: 0 0 10px 0; 
+              color: #333;
+            }
+            .quote-details { 
+              font-size: 14px; 
+              line-height: 1.6;
+            }
+            .quote-details div { 
+              margin-bottom: 5px;
+            }
+            .main-content { 
+              display: flex; 
+              gap: 40px; 
+              margin-bottom: 30px;
+            }
+            .from-section, .bill-to-section { 
+              flex: 1;
+            }
+            .section-title { 
+              font-weight: bold; 
+              font-size: 16px; 
+              margin-bottom: 10px; 
+              color: #333;
+            }
+            .contact-info { 
+              font-size: 14px; 
+              line-height: 1.6;
+            }
+            .contact-info div { 
+              margin-bottom: 5px;
+            }
+            .project-info { 
+              margin-top: 15px;
+            }
+            .project-info .section-title { 
+              margin-bottom: 5px;
+            }
+            .line-items { 
+              margin-bottom: 30px;
+            }
+            .line-items h2 { 
+              font-size: 18px; 
+              font-weight: bold; 
+              margin-bottom: 15px; 
+              color: #333;
+            }
+            table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin-bottom: 20px;
+            }
+            th, td { 
+              border: 1px solid #ddd; 
+              padding: 12px 8px; 
+              text-align: left; 
+              font-size: 14px;
+            }
+            th { 
+              background: #f8f9fa; 
+              font-weight: bold; 
+              color: #333;
+            }
+            .cost-summary { 
+              display: flex; 
+              justify-content: flex-end;
+            }
+            .summary-table { 
+              width: 300px;
+            }
+            .summary-table td { 
+              border: none; 
+              padding: 8px 0;
+            }
+            .summary-table td:first-child { 
+              text-align: left;
+            }
+            .summary-table td:last-child { 
+              text-align: right; 
+              font-weight: bold;
+            }
+            .grand-total { 
+              border-top: 2px solid #333 !important; 
+              font-size: 16px !important;
+            }
+            .signature-section { 
+              margin-top: 40px; 
+              display: flex; 
+              gap: 100px;
+            }
+            .signature-box { 
+              flex: 1;
+            }
+            .signature-line { 
+              border-top: 1px solid #333; 
+              margin-top: 30px; 
+              padding-top: 5px;
+            }
+            .signature-label { 
+              font-size: 12px; 
+              color: #666;
+            }
+            .page-break { 
+              page-break-before: always; 
+            }
+            .scope-section { 
+              margin-top: 30px;
+            }
+            .scope-section h2 { 
+              font-size: 18px; 
+              font-weight: bold; 
+              margin-bottom: 15px; 
+              color: #333;
+            }
+            .scope-content { 
+              font-size: 14px; 
+              line-height: 1.6; 
+              margin-bottom: 20px;
+            }
+          </style>
+        </head>
+        <body>
+          <!-- Header -->
+          <div class="header">
+            <div class="logo-section">
+              ${logoUrl ? `<img src="${logoUrl}" alt="Company Logo" class="logo" />` : ''}
+              <div class="company-info">
+                <h1>FUSEDAI</h1>
+                <h2>PROFESSIONAL TECHNOLOGIES, INC.</h2>
+              </div>
+            </div>
+            <div class="quote-header">
+              <h1>QUOTE</h1>
+              <div class="quote-details">
+                <div><strong>Quote #:</strong> Q-${Date.now()}</div>
+                <div><strong>Date:</strong> ${new Date().toLocaleDateString()}</div>
+                <div><strong>Valid Until:</strong> ${new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString()}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Company and Billing Information -->
+          <div class="main-content">
+            <div class="from-section">
+              <div class="section-title">From:</div>
+              <div class="contact-info">
+                <div><strong>FusedAI</strong></div>
+                <div>Professional Technologies, Inc.</div>
+                <div>123 Innovation Drive</div>
+                <div>Tech City, TC 12345</div>
+                <div>contact@fusedai.com | (555) 123-4567</div>
+              </div>
+            </div>
+            <div class="bill-to-section">
+              <div class="section-title">Bill To:</div>
+              <div class="contact-info">
+                <div><strong>${reportData.customer_information.company_name || 'N/A'}</strong></div>
+                <div>${reportData.contact_information.first_name} ${reportData.contact_information.last_name}</div>
+                <div>${reportData.customer_information.address || 'N/A'}</div>
+                <div>${reportData.contact_information.email || 'N/A'} | ${reportData.contact_information.phone || 'N/A'}</div>
+              </div>
+              <div class="project-info">
+                <div class="section-title">Project:</div>
+                <div>${reportData.project_data.project_name}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Scope of Work Section -->
+          <div class="scope-section">
+            <h2>SCOPE OF WORK</h2>
+            <div class="scope-content">
+              ${aiScopeOfWork.split('\\n').map(line => `<div style="margin-bottom: 8px;">${line}</div>`).join('')}
+            </div>
+          </div>
+
+          <!-- Line Items Table -->
+          <div class="line-items">
+            <h2>Line Items</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Description</th>
+                  <th>Manufacturer</th>
+                  <th>Part Number</th>
+                  <th>Qty</th>
+                  <th>Unit</th>
+                  <th>Price</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${reportData.bill_of_materials.items.map((item: any) => `
+                  <tr>
+                    <td>${item.description}</td>
+                    <td>${item.manufacturer || 'N/A'}</td>
+                    <td>${item.part_number || 'N/A'}</td>
+                    <td>${item.quantity}</td>
+                    <td>${item.unit}</td>
+                    <td>${formatCurrency(item.unit_price)}</td>
+                    <td>${formatCurrency(item.total_price)}</td>
+                  </tr>
+                `).join('')}
+                ${laborTypes.map((labor: any) => `
+                  <tr>
+                    <td>${labor.name} - Labor</td>
+                    <td>N/A</td>
+                    <td>LAB-${labor.id}</td>
+                    <td>8</td>
+                    <td>Hours</td>
+                    <td>${formatCurrency(labor.rate)}/hr</td>
+                    <td>${formatCurrency(labor.rate * 8)}</td>
+                  </tr>
+                `).join('')}
+                ${customItems.map((item: any) => `
+                  <tr>
+                    <td>${item.description}</td>
+                    <td>N/A</td>
+                    <td>CUST-${item.id}</td>
+                    <td>${item.quantity}</td>
+                    <td>Each</td>
+                    <td>${formatCurrency(item.unitPrice)}</td>
+                    <td>${formatCurrency(item.totalPrice)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Cost Summary -->
+          <div class="cost-summary">
+            <table class="summary-table">
+              <tbody>
+                <tr>
+                  <td>Materials Total:</td>
+                  <td>${formatCurrency(reportData.cost_summary.total_material_cost)}</td>
+                </tr>
+                <tr>
+                  <td>Labor Total:</td>
+                  <td>${formatCurrency(reportData.cost_summary.total_labor_cost)}</td>
+                </tr>
+                <tr>
+                  <td>Tax on Materials (8.25%):</td>
+                  <td>${formatCurrency(reportData.cost_summary.total_material_cost * 0.0825)}</td>
+                </tr>
+                <tr class="grand-total">
+                  <td><strong>Grand Total:</strong></td>
+                  <td><strong>${formatCurrency(reportData.cost_summary.grand_total + (reportData.cost_summary.total_material_cost * 0.0825))}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Additional Sections -->
+          <div class="additional-sections">
+            <h2>ASSUMPTIONS</h2>
+            <ul>
+              ${aiAssumptions.split('\\n').filter(line => line.trim()).map(line => `<li>${line.trim()}</li>`).join('')}
+            </ul>
+
+            <h2>EXCLUSIONS</h2>
+            <ul>
+              ${aiExclusions.split('\\n').filter(line => line.trim()).map(line => `<li>${line.trim()}</li>`).join('')}
+            </ul>
+
+            <h2>ADDITIONAL NOTES</h2>
+            <ul>
+              ${aiAdditionalNotes.split('\\n').filter(line => line.trim()).map(line => `<li>${line.trim()}</li>`).join('')}
+            </ul>
+          </div>
+
+          <!-- Signature Section -->
+          <div class="signature-section">
+            <div class="signature-box">
+              <div class="signature-line"></div>
+              <div class="signature-label">Customer Signature</div>
+            </div>
+            <div class="signature-box">
+              <div class="signature-line"></div>
+              <div class="signature-label">Date</div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      // Create blob and open in new window
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      
+      toast({ title: "Success", description: "PDF preview opened in new window!" });
+    } catch (error) {
+      console.error('Error generating PDF preview:', error);
+      toast({ 
+        title: "Error", 
+        description: "Failed to generate PDF preview. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const downloadQuotePDF = async () => {
+    try {
+      // Check if we have generated report data
+      if (!generatedReportData) {
+        toast({
+          variant: "destructive",
+          title: "No Data Available",
+          description: "Please click 'Generate with AI' first to generate the report data."
+        });
+        return;
+      }
+
+      // Use the stored API response data
+      const reportData = generatedReportData.report_data;
+      const sections = generatedReportData.sections;
+      const logoUrl = sections.logo_url;
+
+      // Get data from session storage for additional context
+      const laborData = sessionStorage.getItem('quoteLaborTypes');
+      const laborTypes = laborData ? JSON.parse(laborData) : [];
+      
+      const customItemsData = sessionStorage.getItem('quoteCustomItems');
+      const customItems = customItemsData ? JSON.parse(customItemsData) : [];
+      
+      // Create HTML content for PDF (same as preview)
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Quote - ${reportData.project_data.project_name}</title>
+          <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              margin: 0; 
+              padding: 20px; 
+              line-height: 1.4; 
+              color: #333;
+            }
+            .header { 
+              display: flex; 
+              justify-content: space-between; 
+              align-items: flex-start; 
+              margin-bottom: 30px; 
+              border-bottom: 2px solid #333; 
+              padding-bottom: 20px;
+            }
+            .logo-section { 
+              display: flex; 
+              align-items: center; 
+              gap: 15px;
+            }
+            .logo { 
+              max-width: 80px; 
+              height: auto;
+            }
+            .company-info h1 { 
+              font-size: 24px; 
+              font-weight: bold; 
+              margin: 0 0 5px 0; 
+              color: #2563eb;
+            }
+            .company-info h2 { 
+              font-size: 14px; 
+              font-weight: normal; 
+              margin: 0; 
+              color: #666;
+            }
+            .quote-header { 
+              text-align: right;
+            }
+            .quote-header h1 { 
+              font-size: 32px; 
+              font-weight: bold; 
+              margin: 0 0 10px 0; 
+              color: #333;
+            }
+            .quote-details { 
+              font-size: 14px; 
+              line-height: 1.6;
+            }
+            .quote-details div { 
+              margin-bottom: 5px;
+            }
+            .main-content { 
+              display: flex; 
+              gap: 40px; 
+              margin-bottom: 30px;
+            }
+            .from-section, .bill-to-section { 
+              flex: 1;
+            }
+            .section-title { 
+              font-weight: bold; 
+              font-size: 16px; 
+              margin-bottom: 10px; 
+              color: #333;
+            }
+            .contact-info { 
+              font-size: 14px; 
+              line-height: 1.6;
+            }
+            .contact-info div { 
+              margin-bottom: 5px;
+            }
+            .project-info { 
+              margin-top: 15px;
+            }
+            .project-info .section-title { 
+              margin-bottom: 5px;
+            }
+            .line-items { 
+              margin-bottom: 30px;
+            }
+            .line-items h2 { 
+              font-size: 18px; 
+              font-weight: bold; 
+              margin-bottom: 15px; 
+              color: #333;
+            }
+            table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin-bottom: 20px;
+            }
+            th, td { 
+              border: 1px solid #ddd; 
+              padding: 12px 8px; 
+              text-align: left; 
+              font-size: 14px;
+            }
+            th { 
+              background: #f8f9fa; 
+              font-weight: bold; 
+              color: #333;
+            }
+            .cost-summary { 
+              display: flex; 
+              justify-content: flex-end;
+            }
+            .summary-table { 
+              width: 300px;
+            }
+            .summary-table td { 
+              border: none; 
+              padding: 8px 0;
+            }
+            .summary-table td:first-child { 
+              text-align: left;
+            }
+            .summary-table td:last-child { 
+              text-align: right; 
+              font-weight: bold;
+            }
+            .grand-total { 
+              border-top: 2px solid #333 !important; 
+              font-size: 16px !important;
+            }
+            .signature-section { 
+              margin-top: 40px; 
+              display: flex; 
+              gap: 100px;
+            }
+            .signature-box { 
+              flex: 1;
+            }
+            .signature-line { 
+              border-top: 1px solid #333; 
+              margin-top: 30px; 
+              padding-top: 5px;
+            }
+            .signature-label { 
+              font-size: 12px; 
+              color: #666;
+            }
+            .page-break { 
+              page-break-before: always; 
+            }
+            .scope-section { 
+              margin-top: 30px;
+            }
+            .scope-section h2 { 
+              font-size: 18px; 
+              font-weight: bold; 
+              margin-bottom: 15px; 
+              color: #333;
+            }
+            .scope-content { 
+              font-size: 14px; 
+              line-height: 1.6; 
+              margin-bottom: 20px;
+            }
+          </style>
+        </head>
+        <body>
+          <!-- Header -->
+          <div class="header">
+            <div class="logo-section">
+              ${logoUrl ? `<img src="${logoUrl}" alt="Company Logo" class="logo" />` : ''}
+              <div class="company-info">
+                <h1>FUSEDAI</h1>
+                <h2>PROFESSIONAL TECHNOLOGIES, INC.</h2>
+              </div>
+            </div>
+            <div class="quote-header">
+              <h1>QUOTE</h1>
+              <div class="quote-details">
+                <div><strong>Quote #:</strong> Q-${Date.now()}</div>
+                <div><strong>Date:</strong> ${new Date().toLocaleDateString()}</div>
+                <div><strong>Valid Until:</strong> ${new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString()}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Company and Billing Information -->
+          <div class="main-content">
+            <div class="from-section">
+              <div class="section-title">From:</div>
+              <div class="contact-info">
+                <div><strong>FusedAI</strong></div>
+                <div>Professional Technologies, Inc.</div>
+                <div>123 Innovation Drive</div>
+                <div>Tech City, TC 12345</div>
+                <div>contact@fusedai.com | (555) 123-4567</div>
+              </div>
+            </div>
+            <div class="bill-to-section">
+              <div class="section-title">Bill To:</div>
+              <div class="contact-info">
+                <div><strong>${reportData.customer_information.company_name || 'N/A'}</strong></div>
+                <div>${reportData.contact_information.first_name} ${reportData.contact_information.last_name}</div>
+                <div>${reportData.customer_information.address || 'N/A'}</div>
+                <div>${reportData.contact_information.email || 'N/A'} | ${reportData.contact_information.phone || 'N/A'}</div>
+              </div>
+              <div class="project-info">
+                <div class="section-title">Project:</div>
+                <div>${reportData.project_data.project_name}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Line Items Table -->
+          <div class="line-items">
+            <h2>Line Items</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Description</th>
+                  <th>Manufacturer</th>
+                  <th>Part Number</th>
+                  <th>Qty</th>
+                  <th>Unit</th>
+                  <th>Price</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${reportData.bill_of_materials.items.map((item: any) => `
+                  <tr>
+                    <td>${item.description}</td>
+                    <td>${item.manufacturer || 'N/A'}</td>
+                    <td>${item.part_number || 'N/A'}</td>
+                    <td>${item.quantity}</td>
+                    <td>${item.unit}</td>
+                    <td>${formatCurrency(item.unit_price)}</td>
+                    <td>${formatCurrency(item.total_price)}</td>
+                  </tr>
+                `).join('')}
+                ${laborTypes.map((labor: any) => `
+                  <tr>
+                    <td>${labor.name} - Labor</td>
+                    <td>N/A</td>
+                    <td>LAB-${labor.id}</td>
+                    <td>8</td>
+                    <td>Hours</td>
+                    <td>${formatCurrency(labor.rate)}/hr</td>
+                    <td>${formatCurrency(labor.rate * 8)}</td>
+                  </tr>
+                `).join('')}
+                ${customItems.map((item: any) => `
+                  <tr>
+                    <td>${item.description}</td>
+                    <td>N/A</td>
+                    <td>CUST-${item.id}</td>
+                    <td>${item.quantity}</td>
+                    <td>Each</td>
+                    <td>${formatCurrency(item.unitPrice)}</td>
+                    <td>${formatCurrency(item.totalPrice)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Cost Summary -->
+          <div class="cost-summary">
+            <table class="summary-table">
+              <tbody>
+                <tr>
+                  <td>Materials Total:</td>
+                  <td>${formatCurrency(reportData.cost_summary.total_material_cost)}</td>
+                </tr>
+                <tr>
+                  <td>Labor Total:</td>
+                  <td>${formatCurrency(reportData.cost_summary.total_labor_cost)}</td>
+                </tr>
+                <tr>
+                  <td>Tax on Materials (8.25%):</td>
+                  <td>${formatCurrency(reportData.cost_summary.total_material_cost * 0.0825)}</td>
+                </tr>
+                <tr class="grand-total">
+                  <td><strong>Grand Total:</strong></td>
+                  <td><strong>${formatCurrency(reportData.cost_summary.grand_total + (reportData.cost_summary.total_material_cost * 0.0825))}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Signature Section -->
+          <div class="signature-section">
+            <div class="signature-box">
+              <div class="signature-line"></div>
+              <div class="signature-label">Customer Signature</div>
+            </div>
+            <div class="signature-box">
+              <div class="signature-line"></div>
+              <div class="signature-label">Date</div>
+            </div>
+          </div>
+
+          <!-- Scope of Work Section -->
+          <div class="scope-section">
+            <h2>SCOPE OF WORK</h2>
+            <div class="scope-content">
+              ${aiScopeOfWork.split('\\n').map(line => `<div style="margin-bottom: 8px;">${line}</div>`).join('')}
+            </div>
+          </div>
+
+          <!-- Additional Sections -->
+          <div class="additional-sections">
+            <h2>ASSUMPTIONS</h2>
+            <ul>
+              ${aiAssumptions.split('\\n').filter(line => line.trim()).map(line => `<li>${line.trim()}</li>`).join('')}
+            </ul>
+
+            <h2>EXCLUSIONS</h2>
+            <ul>
+              ${aiExclusions.split('\\n').filter(line => line.trim()).map(line => `<li>${line.trim()}</li>`).join('')}
+            </ul>
+
+            <h2>ADDITIONAL NOTES</h2>
+            <ul>
+              ${aiAdditionalNotes.split('\\n').filter(line => line.trim()).map(line => `<li>${line.trim()}</li>`).join('')}
+            </ul>
+          </div>
+        </body>
+        </html>
+      `;
+
+      // Create element and generate PDF
+      const element = document.createElement('div');
+      element.innerHTML = htmlContent;
+      document.body.appendChild(element);
+      
+      const opt = {
+        margin: 1,
+        filename: `quote-report-${reportData.project_data.project_name}-${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+      };
+      
+      await window.html2pdf().set(opt).from(element).save();
+      document.body.removeChild(element);
+      
+      toast({ title: "Success", description: "PDF generated and downloaded successfully!" });
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast({ 
+        title: "Error", 
+        description: "Failed to generate PDF. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
 
   const generatePdfFromApiContent = () => {
     try {
@@ -5396,6 +6162,30 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                             <span>Edit</span>
                           </>
                         )}
+                      </button>
+                      <button
+                        onClick={previewQuotePDF}
+                        disabled={!generatedReportData}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2 ${
+                          generatedReportData
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                            : 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                        }`}
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span>Preview PDF</span>
+                      </button>
+                      <button
+                        onClick={downloadQuotePDF}
+                        disabled={!generatedReportData}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2 ${
+                          generatedReportData
+                            ? 'bg-green-600 hover:bg-green-700 text-white cursor-pointer'
+                            : 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                        }`}
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Download PDF</span>
                       </button>
                     </div>
                   </div>
