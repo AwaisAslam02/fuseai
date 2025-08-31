@@ -39,7 +39,9 @@ import {
   TrendingUp,
   Target,
   Copy,
-  LogOut
+  LogOut,
+  Lightbulb,
+  MessageSquare
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -129,7 +131,6 @@ interface EstimationResults {
   materialsMin: number;
   materialsMax: number;
   marginApplied: number;
-  confidence: number;
   laborBreakdown: {
     technician: {
       rate: number;
@@ -204,6 +205,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
   const [aiExclusions, setAiExclusions] = useState('This section will clearly define what is not included in the project scope and quote.');
   const [aiAdditionalNotes, setAiAdditionalNotes] = useState('This section will contain any additional notes, special considerations, or important information for the project.');
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [quoteLogoUrl, setQuoteLogoUrl] = useState<string>('');
   const [bomPricingConfig, setBomPricingConfig] = useState({
     type: 'Margin',
     percentage: 35,
@@ -231,6 +233,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     };
     getParams();
   }, [params]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -252,7 +255,8 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     partNumber: '',
     manufacturer: '',
     modelNumber: '',
-    notes: ''
+    notes: '',
+    margin: 35 // Default margin, will be updated when pricing config is loaded
   });
 
   // Pagination states for BOM
@@ -276,7 +280,74 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     adjustmentDescription: ''
   });
   const [additionalContext, setAdditionalContext] = useState('');
-  const [estimationResults, setEstimationResults] = useState<EstimationResults | null>(null);
+  const [aiAnalysisResponse, setAiAnalysisResponse] = useState<string>('');
+  const [isGeneratingAnalysis, setIsGeneratingAnalysis] = useState(false);
+  const [materialsAnalysis, setMaterialsAnalysis] = useState<any[]>([]);
+  const [isGeneratingMaterials, setIsGeneratingMaterials] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<any>(null);
+  const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
+  const [valueEngineering, setValueEngineering] = useState<any>(null);
+  const [isGeneratingValueEngineering, setIsGeneratingValueEngineering] = useState(false);
+  const [laborAnalysis, setLaborAnalysis] = useState<any>(null);
+  const [isGeneratingLaborAnalysis, setIsGeneratingLaborAnalysis] = useState(false);
+  const [discussionPoints, setDiscussionPoints] = useState<any>(null);
+  const [isGeneratingDiscussionPoints, setIsGeneratingDiscussionPoints] = useState(false);
+  
+  // Store all generated AI analysis data
+  const [allGeneratedData, setAllGeneratedData] = useState<{
+    aiAnalysis?: any;
+    materialsAnalysis?: any;
+    aiSuggestions?: any;
+    valueEngineering?: any;
+    laborAnalysis?: any;
+    discussionPoints?: any;
+    estimationResults?: any;
+  }>({});
+
+  // Overview data state
+  const [overviewData, setOverviewData] = useState<any>(null);
+  const [isLoadingOverview, setIsLoadingOverview] = useState(false);
+  
+  // PDF generation states
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [estimationResults, setEstimationResults] = useState<EstimationResults | null>({
+    bestCasePrice: 87401.94,
+    worstCasePrice: 103948.09,
+    materialsMin: 35686.60,
+    materialsMax: 41039.59,
+    marginApplied: 15,
+    
+    laborBreakdown: {
+      technician: {
+        rate: 95,
+        hours: { min: 56, max: 87 },
+        cost: { min: 5560, max: 8515 }
+      },
+      programmingEngineer: {
+        rate: 130,
+        hours: { min: 120, max: 180 },
+        cost: { min: 15600, max: 23400 }
+      }
+    },
+    materialsBreakdown: {
+      totalCost: { min: 35686.60, max: 41039.59 },
+      categories: [
+        {
+          name: 'Category Test',
+          description: 'category test components from BOM',
+          cost: 4.00,
+          customer: 4.00
+        },
+        {
+          name: 'Hardware',
+          description: 'Hardware components from BOM',
+          cost: 200.00,
+          customer: 307.69
+        }
+      ]
+    },
+    aiReasoning: "BOM-first estimation using actual BOM data with confidence-based contingency. Materials: $35686.60-$41039.59 (from 22 BOM items + 15% contingency based on 85% confidence). Labor: Labor analysis for installing the 22 BOM items listed above considers the complexity of a multi-door access control system, the need for specialized programming and installation skills, and coordination with other trades."
+  });
   const [isGeneratingEstimation, setIsGeneratingEstimation] = useState(false);
   const [newLaborType, setNewLaborType] = useState({
     name: '',
@@ -296,19 +367,21 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
   const [pdfUrl, setPdfUrl] = useState<string>('');
   const [showPdfPreview, setShowPdfPreview] = useState(false);
 
+  // Auto-fetch overview data when Overview tab is selected
+  useEffect(() => {
+    if (activeEstimationTab === 'Overview' && !overviewData && !isLoadingOverview && projectId) {
+      fetchOverviewData();
+    }
+  }, [activeEstimationTab, overviewData, isLoadingOverview, projectId]);
+
   // Load project data from session storage or use default values
   const [project, setProject] = useState<Project>(() => {
-    if (typeof window !== 'undefined') {
-      const storedProject = sessionStorage.getItem('currentProject');
-      if (storedProject) {
-        return JSON.parse(storedProject);
-      }
-    }
+    // Use a consistent initial state for both server and client
     return {
       id: '',
-      title: 'Loading...',
+      title: '',
       status: 'pending',
-      description: 'Loading project details...',
+      description: '',
       company: '',
     contact: {
         name: '',
@@ -318,6 +391,27 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       date: ''
     };
   });
+
+  const [isProjectLoaded, setIsProjectLoaded] = useState(false);
+
+  // Load project data from sessionStorage after component mounts
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedProject = sessionStorage.getItem('currentProject');
+      if (storedProject) {
+        setProject(JSON.parse(storedProject));
+      }
+      setIsProjectLoaded(true);
+    }
+  }, []);
+
+  // Update newItem margin when pricing configuration changes
+  useEffect(() => {
+    setNewItem(prev => ({
+      ...prev,
+      margin: getCurrentMargin()
+    }));
+  }, [bomPricingConfig.percentage]);
 
   interface BackendDocument {
     document_id: string;
@@ -544,8 +638,8 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
               modelNumber: item.model_number,
               notes: item.notes,
               totalCost: item.total_price,
-              totalSell: item.total_price * 1.35, // Apply 35% margin
-              margin: 35
+              totalSell: item.total_price * (1 + getCurrentMargin() / 100), // Apply configured margin
+              margin: getCurrentMargin()
             }));
             
             setBomItems(transformedItems);
@@ -637,12 +731,19 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           return;
         }
 
+        if (!projectId) {
+          return; // Wait for projectId to be available
+        }
+
         const response = await fetch('https://chikaai.net/api/fusedai/get-all-labors', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'token': token
-          }
+          },
+          body: JSON.stringify({
+            project_id: parseInt(projectId)
+          })
         });
 
         const data = await response.json();
@@ -674,7 +775,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     };
 
     fetchLabors();
-  }, []);
+  }, [projectId]);
 
   // Load existing quote labor types from session storage
   useEffect(() => {
@@ -912,9 +1013,14 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
   const { toast } = useToast();
 
   // BOM Helper Functions
+  const getCurrentMargin = (): number => {
+    // Use the selected pricing configuration margin, fallback to 35% if not set
+    return bomPricingConfig.percentage || 35;
+  };
+
   const calculateItemTotals = (item: Partial<BOMItem>): { totalCost: number; totalSell: number } => {
     const cost = (item.quantity || 0) * (item.unitPrice || 0);
-    const margin = (item.margin || 35) / 100;
+    const margin = getCurrentMargin() / 100;
     const sell = cost / (1 - margin);
     return { totalCost: cost, totalSell: sell };
   };
@@ -1021,8 +1127,8 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           modelNumber: data.bill_of_material.model_number,
           notes: data.bill_of_material.notes,
           totalCost: data.bill_of_material.total_price,
-          totalSell: data.bill_of_material.total_price * 1.35, // Apply 35% margin
-          margin: 35
+          totalSell: data.bill_of_material.total_price * (1 + getCurrentMargin() / 100), // Apply configured margin
+          margin: getCurrentMargin()
         };
 
         setBomItems(prev => [...prev, createdItem]);
@@ -1040,7 +1146,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           manufacturer: '',
           modelNumber: '',
           notes: '',
-          margin: 35
+          margin: getCurrentMargin()
         });
         
         setIsAddItemModalOpen(false);
@@ -1079,8 +1185,8 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                 modelNumber: item.model_number,
                 notes: item.notes,
                 totalCost: item.total_price,
-                totalSell: item.total_price * 1.35,
-                margin: 35
+                totalSell: item.total_price * (1 + getCurrentMargin() / 100),
+                margin: getCurrentMargin()
               }));
               
               setBomItems(transformedItems);
@@ -1275,6 +1381,976 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       style: 'currency',
       currency: 'USD'
     }).format(amount);
+  };
+
+  // Function to update stored generated data
+  const updateGeneratedData = (key: string, data: any) => {
+    setAllGeneratedData(prev => ({
+      ...prev,
+      [key]: data
+    }));
+  };
+
+  const fetchOverviewData = async () => {
+    setIsLoadingOverview(true);
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({ title: "Error", description: "Authentication token not found" });
+        return;
+      }
+
+      const response = await fetch('https://chikaai.net/api/fusedai/ai-estimation-overview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': `${token}`
+        },
+        body: JSON.stringify({
+          project_id: parseInt(projectId)
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setOverviewData(data);
+        // toast({ title: "Success", description: "Overview data fetched successfully!" });
+      } else {
+        const errorData = await response.json();
+        toast({ title: "Error", description: errorData.detail || "Failed to fetch overview data" });
+      }
+    } catch (error) {
+      console.error('Error fetching overview data:', error);
+      toast({ title: "Error", description: "Failed to fetch overview data" });
+    } finally {
+      setIsLoadingOverview(false);
+    }
+  };
+
+  // Function to preview comprehensive PDF with all AI analysis data
+  const previewComprehensivePDF = async () => {
+    try {
+      setIsGeneratingPDF(true);
+      
+      // Create HTML content for PDF
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>AI Estimation Analysis Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+            .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+            .section { margin-bottom: 30px; page-break-inside: avoid; }
+            .section-title { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 15px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+            .subsection { margin-bottom: 20px; }
+            .subsection-title { font-size: 14px; font-weight: bold; color: #555; margin-bottom: 10px; }
+            .data-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 10px 0; }
+            .data-item { background: #f5f5f5; padding: 10px; border-radius: 5px; }
+            .data-label { font-weight: bold; color: #666; }
+            .data-value { color: #333; }
+            .card { border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin: 10px 0; background: #fafafa; }
+            .priority-high { border-left: 4px solid #dc3545; }
+            .priority-medium { border-left: 4px solid #ffc107; }
+            .priority-low { border-left: 4px solid #28a745; }
+            .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin: 2px; }
+            .badge-red { background: #ffebee; color: #c62828; }
+            .badge-yellow { background: #fff3e0; color: #ef6c00; }
+            .badge-green { background: #e8f5e8; color: #2e7d32; }
+            .badge-blue { background: #e3f2fd; color: #1565c0; }
+            table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background: #f5f5f5; font-weight: bold; }
+            ul { margin: 5px 0; padding-left: 20px; }
+            li { margin: 3px 0; }
+            .summary-box { background: #e8f5e8; border: 1px solid #4caf50; border-radius: 8px; padding: 15px; margin: 15px 0; }
+            .warning-box { background: #fff3e0; border: 1px solid #ff9800; border-radius: 8px; padding: 15px; margin: 15px 0; }
+            .info-box { background: #e3f2fd; border: 1px solid #2196f3; border-radius: 8px; padding: 15px; margin: 15px 0; }
+            .page-break { page-break-before: always; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>AI Estimation Analysis Report</h1>
+            <p>Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+            <p>Project: ${project?.title || 'N/A'}</p>
+          </div>
+
+          ${allGeneratedData.estimationResults ? `
+          <div class="section">
+            <div class="section-title">Estimation Overview</div>
+            <div class="data-grid">
+              <div class="data-item">
+                <div class="data-label">Best Case Price</div>
+                <div class="data-value">${formatCurrency(allGeneratedData.estimationResults.bestCasePrice)}</div>
+              </div>
+              <div class="data-item">
+                <div class="data-label">Worst Case Price</div>
+                <div class="data-value">${formatCurrency(allGeneratedData.estimationResults.worstCasePrice)}</div>
+              </div>
+              <div class="data-item">
+                <div class="data-label">Materials Cost Range</div>
+                <div class="data-value">${formatCurrency(allGeneratedData.estimationResults.materialsMin)} - ${formatCurrency(allGeneratedData.estimationResults.materialsMax)}</div>
+              </div>
+              <div class="data-item">
+                <div class="data-label">Confidence Level</div>
+                <div class="data-value">${allGeneratedData.estimationResults.confidence}%</div>
+              </div>
+            </div>
+          </div>
+          ` : ''}
+
+          ${allGeneratedData.aiAnalysis ? `
+          <div class="section page-break">
+            <div class="section-title">AI Analysis & Reasoning</div>
+            <div class="card">
+              <div class="subsection-title">AI Analysis Response</div>
+              <p>${allGeneratedData.aiAnalysis.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</p>
+            </div>
+          </div>
+          ` : ''}
+
+          ${allGeneratedData.materialsAnalysis && allGeneratedData.materialsAnalysis.length > 0 ? `
+          <div class="section page-break">
+            <div class="section-title">Materials Analysis</div>
+            ${allGeneratedData.materialsAnalysis.map((category: any, index: number) => `
+              <div class="card">
+                <div class="subsection-title">${category.category_name}</div>
+                <p><strong>Description:</strong> ${category.description}</p>
+                
+                <div class="subsection">
+                  <div class="subsection-title">Specific Components</div>
+                  <ul>
+                    ${category.specific_components.map((component: string) => `<li>${component}</li>`).join('')}
+                  </ul>
+                </div>
+                
+                <div class="subsection">
+                  <div class="subsection-title">Potentially Missing Components</div>
+                  <ul>
+                    ${category.potentially_missing_components.map((component: string) => `<li>${component}</li>`).join('')}
+                  </ul>
+                </div>
+                
+                <div class="subsection">
+                  <div class="subsection-title">Risk Factors</div>
+                  <ul>
+                    ${category.risk_factors.map((risk: string) => `<li>${risk}</li>`).join('')}
+                  </ul>
+                </div>
+                
+                <div class="subsection">
+                  <div class="subsection-title">Cost Analysis</div>
+                  <p>${category.cost_analysis}</p>
+                </div>
+                
+                <div class="subsection">
+                  <div class="subsection-title">Technical Notes</div>
+                  <p>${category.technical_notes}</p>
+                </div>
+                
+                <div class="subsection">
+                  <div class="subsection-title">Recommendations</div>
+                  <p>${category.recommendations}</p>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+          ` : ''}
+
+          ${allGeneratedData.aiSuggestions ? `
+          <div class="section page-break">
+            <div class="section-title">AI Material Suggestions</div>
+            
+            <div class="summary-box">
+              <div class="subsection-title">Project Summary</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Project</div>
+                  <div class="data-value">${allGeneratedData.aiSuggestions.project_name}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Current Cost</div>
+                  <div class="data-value">${formatCurrency(allGeneratedData.aiSuggestions.current_material_cost)}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Additional Cost</div>
+                  <div class="data-value">${formatCurrency(allGeneratedData.aiSuggestions.cost_impact.estimated_additional_cost)} (${allGeneratedData.aiSuggestions.cost_impact.percentage_increase}% increase)</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Suggested Materials</div>
+              ${allGeneratedData.aiSuggestions.suggested_materials.map((material: any, index: number) => `
+                <div class="card">
+                  <div class="subsection-title">${material.material_name}</div>
+                  <p><strong>Description:</strong> ${material.description}</p>
+                  <p><strong>Estimated Total:</strong> ${formatCurrency(material.estimated_total)}</p>
+                  <p><strong>Quantity:</strong> ${material.estimated_quantity} ${material.unit} × ${formatCurrency(material.estimated_unit_price)}</p>
+                  <p><strong>Priority:</strong> <span class="badge badge-${material.priority === 'High' ? 'red' : material.priority === 'Medium' ? 'yellow' : 'green'}">${material.priority} Priority</span></p>
+                  <p><strong>Confidence:</strong> <span class="badge badge-blue">${material.confidence_level}% confidence</span></p>
+                  <p><strong>Reasoning:</strong> ${material.reasoning}</p>
+                  <p><strong>Vendor Suggestions:</strong> ${material.vendor_suggestions.join(', ')}</p>
+                  ${material.notes ? `<p><strong>Notes:</strong> ${material.notes}</p>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : ''}
+
+          ${allGeneratedData.valueEngineering ? `
+          <div class="section page-break">
+            <div class="section-title">Value Engineering Opportunities</div>
+            
+            <div class="summary-box">
+              <div class="subsection-title">Project Summary</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Project</div>
+                  <div class="data-value">${allGeneratedData.valueEngineering.project_name}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Current Cost</div>
+                  <div class="data-value">${formatCurrency(allGeneratedData.valueEngineering.current_total_cost)}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Potential Savings</div>
+                  <div class="data-value">${formatCurrency(allGeneratedData.valueEngineering.summary.total_potential_savings)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Summary Statistics</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Total Opportunities</div>
+                  <div class="data-value">${allGeneratedData.valueEngineering.summary.number_of_opportunities}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">High Impact</div>
+                  <div class="data-value">${allGeneratedData.valueEngineering.summary.high_impact_opportunities}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Medium Impact</div>
+                  <div class="data-value">${allGeneratedData.valueEngineering.summary.medium_impact_opportunities}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Low Impact</div>
+                  <div class="data-value">${allGeneratedData.valueEngineering.summary.low_impact_opportunities}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Value Engineering Opportunities</div>
+              ${allGeneratedData.valueEngineering.value_engineering_opportunities.map((opportunity: any, index: number) => `
+                <div class="card priority-${opportunity.impact}">
+                  <div class="subsection-title">${opportunity.opportunity}</div>
+                  <p><strong>Category:</strong> ${opportunity.category}</p>
+                  <p><strong>Potential Savings:</strong> ${opportunity.potential_savings}</p>
+                  <p><strong>Estimated Savings:</strong> ${formatCurrency(opportunity.estimated_savings_amount)}</p>
+                  <p><strong>Tradeoffs:</strong> ${opportunity.tradeoffs}</p>
+                  <p><strong>Impact:</strong> <span class="badge badge-${opportunity.impact === 'high' ? 'red' : opportunity.impact === 'medium' ? 'yellow' : 'green'}">${opportunity.impact} impact</span></p>
+                  <p><strong>Description:</strong> ${opportunity.description}</p>
+                  
+                  <div class="subsection">
+                    <div class="subsection-title">Implementation Details</div>
+                    <div class="data-grid">
+                      <div class="data-item">
+                        <div class="data-label">Implementation Difficulty</div>
+                        <div class="data-value">${opportunity.implementation_difficulty}</div>
+                      </div>
+                      <div class="data-item">
+                        <div class="data-label">Time to Implement</div>
+                        <div class="data-value">${opportunity.time_to_implement}</div>
+                      </div>
+                      <div class="data-item">
+                        <div class="data-label">Risk Level</div>
+                        <div class="data-value">${opportunity.risk_level}</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  ${opportunity.recommended_actions && opportunity.recommended_actions.length > 0 ? `
+                  <div class="subsection">
+                    <div class="subsection-title">Recommended Actions</div>
+                    <ul>
+                      ${opportunity.recommended_actions.map((action: string) => `<li>${action}</li>`).join('')}
+                    </ul>
+                  </div>
+                  ` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : ''}
+
+          ${allGeneratedData.laborAnalysis ? `
+          <div class="section page-break">
+            <div class="section-title">Labor Analysis</div>
+            
+            <div class="summary-box">
+              <div class="subsection-title">Labor Summary</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Project</div>
+                  <div class="data-value">${allGeneratedData.laborAnalysis.project_name}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Total Labor Cost</div>
+                  <div class="data-value">${formatCurrency(allGeneratedData.laborAnalysis.labor_summary.total_labor_cost)}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Total Labor Hours</div>
+                  <div class="data-value">${allGeneratedData.laborAnalysis.labor_summary.total_labor_hours}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Average Hourly Rate</div>
+                  <div class="data-value">${formatCurrency(allGeneratedData.laborAnalysis.labor_summary.average_hourly_rate)}/hr</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Labor Analysis</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Efficiency Assessment</div>
+                  <div class="data-value">${allGeneratedData.laborAnalysis.labor_analysis.efficiency_assessment}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Rate Competitiveness</div>
+                  <div class="data-value">${allGeneratedData.laborAnalysis.labor_analysis.rate_competitiveness}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Labor Distribution</div>
+                  <div class="data-value">${allGeneratedData.laborAnalysis.labor_analysis.labor_distribution}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Industry Comparison</div>
+                  <div class="data-value">${allGeneratedData.laborAnalysis.labor_analysis.industry_comparison}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Detailed Labor Estimates</div>
+              ${allGeneratedData.laborAnalysis.detailed_labor_estimates.map((estimate: any, index: number) => `
+                <div class="card">
+                  <div class="subsection-title">${estimate.labor_name}</div>
+                  <div class="data-grid">
+                    <div class="data-item">
+                      <div class="data-label">Current Hours</div>
+                      <div class="data-value">${estimate.current_hours}</div>
+                    </div>
+                    <div class="data-item">
+                      <div class="data-label">Recommended Hours</div>
+                      <div class="data-value">${estimate.recommended_hours}</div>
+                    </div>
+                    <div class="data-item">
+                      <div class="data-label">Current Rate</div>
+                      <div class="data-value">${formatCurrency(estimate.current_rate)}/hr</div>
+                    </div>
+                    <div class="data-item">
+                      <div class="data-label">Recommended Rate</div>
+                      <div class="data-value">${formatCurrency(estimate.recommended_rate)}/hr</div>
+                    </div>
+                    <div class="data-item">
+                      <div class="data-label">Efficiency Score</div>
+                      <div class="data-value">${estimate.efficiency_score}%</div>
+                    </div>
+                    <div class="data-item">
+                      <div class="data-label">Estimated Savings</div>
+                      <div class="data-value">${formatCurrency(estimate.estimated_savings)}</div>
+                    </div>
+                  </div>
+                  
+                  ${estimate.recommendations && estimate.recommendations.length > 0 ? `
+                  <div class="subsection">
+                    <div class="subsection-title">Recommendations</div>
+                    <ul>
+                      ${estimate.recommendations.map((recommendation: string) => `<li>${recommendation}</li>`).join('')}
+                    </ul>
+                  </div>
+                  ` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : ''}
+
+          ${allGeneratedData.discussionPoints ? `
+          <div class="section page-break">
+            <div class="section-title">Customer Discussion Points</div>
+            
+            <div class="summary-box">
+              <div class="subsection-title">Project Summary</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Project</div>
+                  <div class="data-value">${allGeneratedData.discussionPoints.project_name}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Customer</div>
+                  <div class="data-value">${allGeneratedData.discussionPoints.customer_name}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Discussion Summary</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Total Points</div>
+                  <div class="data-value">${allGeneratedData.discussionPoints.summary.total_discussion_points}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">High Priority</div>
+                  <div class="data-value">${allGeneratedData.discussionPoints.summary.high_priority_points}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Medium Priority</div>
+                  <div class="data-value">${allGeneratedData.discussionPoints.summary.medium_priority_points}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Low Priority</div>
+                  <div class="data-value">${allGeneratedData.discussionPoints.summary.low_priority_points}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="info-box">
+              <div class="subsection-title">Recommended Meeting Agenda</div>
+              <p>${allGeneratedData.discussionPoints.summary.recommended_meeting_agenda}</p>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Discussion Points</div>
+              ${allGeneratedData.discussionPoints.discussion_points.map((point: any, index: number) => `
+                <div class="card priority-${point.priority}">
+                  <div class="subsection-title">${point.question}</div>
+                  <p><strong>Category:</strong> ${point.category}</p>
+                  <p><strong>Priority:</strong> <span class="badge badge-${point.priority === 'high' ? 'red' : point.priority === 'medium' ? 'yellow' : 'green'}">${point.priority} priority</span></p>
+                  <p><strong>Impact:</strong> ${point.impact}</p>
+                  <p><strong>Context:</strong> ${point.context}</p>
+                  <p><strong>Timeline:</strong> ${point.timeline}</p>
+                  <p><strong>Stakeholders:</strong> ${point.stakeholders.join(', ')}</p>
+                  
+                  ${point.suggested_actions && point.suggested_actions.length > 0 ? `
+                  <div class="subsection">
+                    <div class="subsection-title">Suggested Actions</div>
+                    <ul>
+                      ${point.suggested_actions.map((action: string) => `<li>${action}</li>`).join('')}
+                    </ul>
+                  </div>
+                  ` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : ''}
+        </body>
+        </html>
+      `;
+
+      // Create a blob from the HTML content
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      
+      // Open in new window for preview
+      window.open(url, '_blank');
+      
+      // Clean up
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      
+      toast({
+        title: "Success",
+        description: "PDF preview opened in new window!",
+      });
+      
+    } catch (error) {
+      console.error('Error generating PDF preview:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate PDF preview. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  // Function to generate comprehensive PDF with all AI analysis data
+  const generateComprehensivePDF = async () => {
+    try {
+      setIsGeneratingPDF(true);
+      
+      // Create HTML content for PDF
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>AI Estimation Analysis Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+            .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+            .section { margin-bottom: 30px; page-break-inside: avoid; }
+            .section-title { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 15px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+            .subsection { margin-bottom: 20px; }
+            .subsection-title { font-size: 14px; font-weight: bold; color: #555; margin-bottom: 10px; }
+            .data-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 10px 0; }
+            .data-item { background: #f5f5f5; padding: 10px; border-radius: 5px; }
+            .data-label { font-weight: bold; color: #666; }
+            .data-value { color: #333; }
+            .card { border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin: 10px 0; background: #fafafa; }
+            .priority-high { border-left: 4px solid #dc3545; }
+            .priority-medium { border-left: 4px solid #ffc107; }
+            .priority-low { border-left: 4px solid #28a745; }
+            .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin: 2px; }
+            .badge-red { background: #ffebee; color: #c62828; }
+            .badge-yellow { background: #fff3e0; color: #ef6c00; }
+            .badge-green { background: #e8f5e8; color: #2e7d32; }
+            .badge-blue { background: #e3f2fd; color: #1565c0; }
+            table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background: #f5f5f5; font-weight: bold; }
+            ul { margin: 5px 0; padding-left: 20px; }
+            li { margin: 3px 0; }
+            .summary-box { background: #e8f5e8; border: 1px solid #4caf50; border-radius: 8px; padding: 15px; margin: 15px 0; }
+            .warning-box { background: #fff3e0; border: 1px solid #ff9800; border-radius: 8px; padding: 15px; margin: 15px 0; }
+            .info-box { background: #e3f2fd; border: 1px solid #2196f3; border-radius: 8px; padding: 15px; margin: 15px 0; }
+            .page-break { page-break-before: always; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>AI Estimation Analysis Report</h1>
+            <p>Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+            <p>Project: ${project?.title || 'N/A'}</p>
+          </div>
+
+          ${allGeneratedData.estimationResults ? `
+          <div class="section">
+            <div class="section-title">Estimation Overview</div>
+            <div class="data-grid">
+              <div class="data-item">
+                <div class="data-label">Best Case Price</div>
+                <div class="data-value">${formatCurrency(allGeneratedData.estimationResults.bestCasePrice)}</div>
+              </div>
+              <div class="data-item">
+                <div class="data-label">Worst Case Price</div>
+                <div class="data-value">${formatCurrency(allGeneratedData.estimationResults.worstCasePrice)}</div>
+              </div>
+              <div class="data-item">
+                <div class="data-label">Materials Cost Range</div>
+                <div class="data-value">${formatCurrency(allGeneratedData.estimationResults.materialsMin)} - ${formatCurrency(allGeneratedData.estimationResults.materialsMax)}</div>
+              </div>
+              <div class="data-item">
+                <div class="data-label">Confidence Level</div>
+                <div class="data-value">${allGeneratedData.estimationResults.confidence}%</div>
+              </div>
+            </div>
+          </div>
+          ` : ''}
+
+          ${allGeneratedData.aiAnalysis ? `
+          <div class="section page-break">
+            <div class="section-title">AI Analysis & Reasoning</div>
+            <div class="card">
+              <div class="subsection-title">AI Analysis Response</div>
+              <p>${allGeneratedData.aiAnalysis.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</p>
+            </div>
+          </div>
+          ` : ''}
+
+          ${allGeneratedData.materialsAnalysis && allGeneratedData.materialsAnalysis.length > 0 ? `
+          <div class="section page-break">
+            <div class="section-title">Materials Analysis</div>
+            ${allGeneratedData.materialsAnalysis.map((category: any, index: number) => `
+              <div class="card">
+                <div class="subsection-title">${category.category_name}</div>
+                <p><strong>Description:</strong> ${category.description}</p>
+                
+                <div class="subsection">
+                  <div class="subsection-title">Specific Components</div>
+                  <ul>
+                    ${category.specific_components.map((component: string) => `<li>${component}</li>`).join('')}
+                  </ul>
+                </div>
+                
+                <div class="subsection">
+                  <div class="subsection-title">Potentially Missing Components</div>
+                  <ul>
+                    ${category.potentially_missing_components.map((component: string) => `<li>${component}</li>`).join('')}
+                  </ul>
+                </div>
+                
+                <div class="subsection">
+                  <div class="subsection-title">Risk Factors</div>
+                  <ul>
+                    ${category.risk_factors.map((risk: string) => `<li>${risk}</li>`).join('')}
+                  </ul>
+                </div>
+                
+                <div class="subsection">
+                  <div class="subsection-title">Cost Analysis</div>
+                  <p>${category.cost_analysis}</p>
+                </div>
+                
+                <div class="subsection">
+                  <div class="subsection-title">Technical Notes</div>
+                  <p>${category.technical_notes}</p>
+                </div>
+                
+                <div class="subsection">
+                  <div class="subsection-title">Recommendations</div>
+                  <p>${category.recommendations}</p>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+          ` : ''}
+
+          ${allGeneratedData.aiSuggestions ? `
+          <div class="section page-break">
+            <div class="section-title">AI Material Suggestions</div>
+            
+            <div class="summary-box">
+              <div class="subsection-title">Project Summary</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Project</div>
+                  <div class="data-value">${allGeneratedData.aiSuggestions.project_name}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Current Cost</div>
+                  <div class="data-value">${formatCurrency(allGeneratedData.aiSuggestions.current_material_cost)}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Additional Cost</div>
+                  <div class="data-value">${formatCurrency(allGeneratedData.aiSuggestions.cost_impact.estimated_additional_cost)} (${allGeneratedData.aiSuggestions.cost_impact.percentage_increase}% increase)</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Suggested Materials</div>
+              ${allGeneratedData.aiSuggestions.suggested_materials.map((material: any, index: number) => `
+                <div class="card">
+                  <div class="subsection-title">${material.material_name}</div>
+                  <p><strong>Description:</strong> ${material.description}</p>
+                  <p><strong>Estimated Total:</strong> ${formatCurrency(material.estimated_total)}</p>
+                  <p><strong>Quantity:</strong> ${material.estimated_quantity} ${material.unit} × ${formatCurrency(material.estimated_unit_price)}</p>
+                  <p><strong>Priority:</strong> <span class="badge badge-${material.priority === 'High' ? 'red' : material.priority === 'Medium' ? 'yellow' : 'green'}">${material.priority} Priority</span></p>
+                  <p><strong>Confidence:</strong> <span class="badge badge-blue">${material.confidence_level}% confidence</span></p>
+                  <p><strong>Reasoning:</strong> ${material.reasoning}</p>
+                  <p><strong>Vendor Suggestions:</strong> ${material.vendor_suggestions.join(', ')}</p>
+                  ${material.notes ? `<p><strong>Notes:</strong> ${material.notes}</p>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : ''}
+
+          ${allGeneratedData.valueEngineering ? `
+          <div class="section page-break">
+            <div class="section-title">Value Engineering Opportunities</div>
+            
+            <div class="summary-box">
+              <div class="subsection-title">Project Summary</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Project</div>
+                  <div class="data-value">${allGeneratedData.valueEngineering.project_name}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Current Cost</div>
+                  <div class="data-value">${formatCurrency(allGeneratedData.valueEngineering.current_total_cost)}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Potential Savings</div>
+                  <div class="data-value">${formatCurrency(allGeneratedData.valueEngineering.summary.total_potential_savings)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Summary Statistics</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Total Opportunities</div>
+                  <div class="data-value">${allGeneratedData.valueEngineering.summary.number_of_opportunities}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">High Impact</div>
+                  <div class="data-value">${allGeneratedData.valueEngineering.summary.high_impact_opportunities}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Medium Impact</div>
+                  <div class="data-value">${allGeneratedData.valueEngineering.summary.medium_impact_opportunities}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Low Impact</div>
+                  <div class="data-value">${allGeneratedData.valueEngineering.summary.low_impact_opportunities}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Value Engineering Opportunities</div>
+              ${allGeneratedData.valueEngineering.value_engineering_opportunities.map((opportunity: any, index: number) => `
+                <div class="card priority-${opportunity.impact}">
+                  <div class="subsection-title">${opportunity.opportunity}</div>
+                  <p><strong>Category:</strong> ${opportunity.category}</p>
+                  <p><strong>Potential Savings:</strong> ${opportunity.potential_savings}</p>
+                  <p><strong>Estimated Savings:</strong> ${formatCurrency(opportunity.estimated_savings_amount)}</p>
+                  <p><strong>Tradeoffs:</strong> ${opportunity.tradeoffs}</p>
+                  <p><strong>Impact:</strong> <span class="badge badge-${opportunity.impact === 'high' ? 'red' : opportunity.impact === 'medium' ? 'yellow' : 'green'}">${opportunity.impact} impact</span></p>
+                  <p><strong>Description:</strong> ${opportunity.description}</p>
+                  
+                  <div class="subsection">
+                    <div class="subsection-title">Implementation Details</div>
+                    <div class="data-grid">
+                      <div class="data-item">
+                        <div class="data-label">Implementation Difficulty</div>
+                        <div class="data-value">${opportunity.implementation_difficulty}</div>
+                      </div>
+                      <div class="data-item">
+                        <div class="data-label">Time to Implement</div>
+                        <div class="data-value">${opportunity.time_to_implement}</div>
+                      </div>
+                      <div class="data-item">
+                        <div class="data-label">Risk Level</div>
+                        <div class="data-value">${opportunity.risk_level}</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  ${opportunity.recommended_actions && opportunity.recommended_actions.length > 0 ? `
+                  <div class="subsection">
+                    <div class="subsection-title">Recommended Actions</div>
+                    <ul>
+                      ${opportunity.recommended_actions.map((action: string) => `<li>${action}</li>`).join('')}
+                    </ul>
+                  </div>
+                  ` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : ''}
+
+          ${allGeneratedData.laborAnalysis ? `
+          <div class="section page-break">
+            <div class="section-title">Labor Analysis</div>
+            
+            <div class="summary-box">
+              <div class="subsection-title">Labor Summary</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Project</div>
+                  <div class="data-value">${allGeneratedData.laborAnalysis.project_name}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Total Labor Cost</div>
+                  <div class="data-value">${formatCurrency(allGeneratedData.laborAnalysis.labor_summary.total_labor_cost)}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Total Labor Hours</div>
+                  <div class="data-value">${allGeneratedData.laborAnalysis.labor_summary.total_labor_hours}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Average Hourly Rate</div>
+                  <div class="data-value">${formatCurrency(allGeneratedData.laborAnalysis.labor_summary.average_hourly_rate)}/hr</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Labor Analysis</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Efficiency Assessment</div>
+                  <div class="data-value">${allGeneratedData.laborAnalysis.labor_analysis.efficiency_assessment}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Rate Competitiveness</div>
+                  <div class="data-value">${allGeneratedData.laborAnalysis.labor_analysis.rate_competitiveness}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Labor Distribution</div>
+                  <div class="data-value">${allGeneratedData.laborAnalysis.labor_analysis.labor_distribution}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Industry Comparison</div>
+                  <div class="data-value">${allGeneratedData.laborAnalysis.labor_analysis.industry_comparison}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Detailed Labor Estimates</div>
+              ${allGeneratedData.laborAnalysis.detailed_labor_estimates.map((estimate: any, index: number) => `
+                <div class="card">
+                  <div class="subsection-title">${estimate.labor_name}</div>
+                  <div class="data-grid">
+                    <div class="data-item">
+                      <div class="data-label">Current Hours</div>
+                      <div class="data-value">${estimate.current_hours}</div>
+                    </div>
+                    <div class="data-item">
+                      <div class="data-label">Recommended Hours</div>
+                      <div class="data-value">${estimate.recommended_hours}</div>
+                    </div>
+                    <div class="data-item">
+                      <div class="data-label">Current Rate</div>
+                      <div class="data-value">${formatCurrency(estimate.current_rate)}/hr</div>
+                    </div>
+                    <div class="data-item">
+                      <div class="data-label">Recommended Rate</div>
+                      <div class="data-value">${formatCurrency(estimate.recommended_rate)}/hr</div>
+                    </div>
+                    <div class="data-item">
+                      <div class="data-label">Efficiency Score</div>
+                      <div class="data-value">${estimate.efficiency_score}%</div>
+                    </div>
+                    <div class="data-item">
+                      <div class="data-label">Estimated Savings</div>
+                      <div class="data-value">${formatCurrency(estimate.estimated_savings)}</div>
+                    </div>
+                  </div>
+                  
+                  ${estimate.recommendations && estimate.recommendations.length > 0 ? `
+                  <div class="subsection">
+                    <div class="subsection-title">Recommendations</div>
+                    <ul>
+                      ${estimate.recommendations.map((recommendation: string) => `<li>${recommendation}</li>`).join('')}
+                    </ul>
+                  </div>
+                  ` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : ''}
+
+          ${allGeneratedData.discussionPoints ? `
+          <div class="section page-break">
+            <div class="section-title">Customer Discussion Points</div>
+            
+            <div class="summary-box">
+              <div class="subsection-title">Project Summary</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Project</div>
+                  <div class="data-value">${allGeneratedData.discussionPoints.project_name}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Customer</div>
+                  <div class="data-value">${allGeneratedData.discussionPoints.customer_name}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Discussion Summary</div>
+              <div class="data-grid">
+                <div class="data-item">
+                  <div class="data-label">Total Points</div>
+                  <div class="data-value">${allGeneratedData.discussionPoints.summary.total_discussion_points}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">High Priority</div>
+                  <div class="data-value">${allGeneratedData.discussionPoints.summary.high_priority_points}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Medium Priority</div>
+                  <div class="data-value">${allGeneratedData.discussionPoints.summary.medium_priority_points}</div>
+                </div>
+                <div class="data-item">
+                  <div class="data-label">Low Priority</div>
+                  <div class="data-value">${allGeneratedData.discussionPoints.summary.low_priority_points}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="info-box">
+              <div class="subsection-title">Recommended Meeting Agenda</div>
+              <p>${allGeneratedData.discussionPoints.summary.recommended_meeting_agenda}</p>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-title">Discussion Points</div>
+              ${allGeneratedData.discussionPoints.discussion_points.map((point: any, index: number) => `
+                <div class="card priority-${point.priority}">
+                  <div class="subsection-title">${point.question}</div>
+                  <p><strong>Category:</strong> ${point.category}</p>
+                  <p><strong>Priority:</strong> <span class="badge badge-${point.priority === 'high' ? 'red' : point.priority === 'medium' ? 'yellow' : 'green'}">${point.priority} priority</span></p>
+                  <p><strong>Impact:</strong> ${point.impact}</p>
+                  <p><strong>Context:</strong> ${point.context}</p>
+                  <p><strong>Timeline:</strong> ${point.timeline}</p>
+                  <p><strong>Stakeholders:</strong> ${point.stakeholders.join(', ')}</p>
+                  
+                  ${point.suggested_actions && point.suggested_actions.length > 0 ? `
+                  <div class="subsection">
+                    <div class="subsection-title">Suggested Actions</div>
+                    <ul>
+                      ${point.suggested_actions.map((action: string) => `<li>${action}</li>`).join('')}
+                    </ul>
+                  </div>
+                  ` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : ''}
+        </body>
+        </html>
+      `;
+
+      // Create a blob from the HTML content
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      
+      // Use html2pdf to generate PDF
+      const element = document.createElement('div');
+      element.innerHTML = htmlContent;
+      document.body.appendChild(element);
+      
+      const opt = {
+        margin: 1,
+        filename: `AI_Estimation_Analysis_${project?.title || 'Project'}_${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+      };
+      
+      // Generate PDF
+      await window.html2pdf().set(opt).from(element).save();
+      
+      // Clean up
+      document.body.removeChild(element);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Success",
+        description: "PDF generated and downloaded successfully!",
+      });
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate PDF. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
   const handleDeleteDocument = async (docId: string) => {
@@ -1807,7 +2883,10 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
               headers: {
                 'Content-Type': 'application/json',
                 'token': token
-              }
+              },
+              body: JSON.stringify({
+                project_id: parseInt(projectId)
+              })
             });
 
             const laborData = await laborResponse.json();
@@ -1913,8 +2992,8 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         worstCasePrice: 103948.09,
         materialsMin: 35686.60,
         materialsMax: 41039.59,
-        marginApplied: 35,
-        confidence: 85,
+        marginApplied: getCurrentMargin(),
+
         laborBreakdown: {
           technician: {
             rate: 95,
@@ -1948,6 +3027,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       };
       
       setEstimationResults(results);
+      updateGeneratedData('estimationResults', results);
       toast({
         title: "Success",
         description: "AI estimation generated successfully"
@@ -2204,9 +3284,9 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         if (projectPricing) {
           setBomPricingConfig({
             type: projectPricing.pricing_type,
-            percentage: projectPricing.percentage,
+            percentage: parseFloat(projectPricing.percentage) || 0,
             applyTo: projectPricing.apply_to,
-            customAdjustment: projectPricing.custom_adjustment,
+            customAdjustment: parseFloat(projectPricing.custom_adjustment) || 0,
             adjustmentDescription: projectPricing.adjustment_description || ''
           });
         }
@@ -2264,6 +3344,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           setAiAssumptions(data.sections.assumptions || 'No assumptions generated.');
           setAiExclusions(data.sections.exclusions || 'No exclusions generated.');
           setAiAdditionalNotes(data.sections.additional_notes || 'No additional notes generated.');
+          setQuoteLogoUrl(data.sections.logo_url || '');
         }
         
         toast({
@@ -2505,7 +3586,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       
       // Use html2pdf library if available, otherwise fallback to print
       if (typeof window.html2pdf !== 'undefined') {
-        window.html2pdf().from(htmlContent).save(`quote-${project.title}-${new Date().toISOString().split('T')[0]}.pdf`);
+        window.html2pdf().from(htmlContent).save(`quote-${isProjectLoaded ? project.title : 'Project'}-${new Date().toISOString().split('T')[0]}.pdf`);
       } else {
         // Fallback: open in new window for printing
         const printWindow = window.open(url, '_blank');
@@ -2531,6 +3612,10 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
     }
   };
 
+
+
+
+
   const generatePdfFromApiContent = () => {
     try {
       if (!quoteContent) {
@@ -2549,17 +3634,10 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       const customItemsData = sessionStorage.getItem('quoteCustomItems');
       const customItems = customItemsData ? JSON.parse(customItemsData) : [];
 
-      // Process the quote content to handle bold text formatting and extract logo
+      // Process the quote content to handle bold text formatting
       const processQuoteContent = (content: string) => {
-        // First, extract logo if present - more flexible regex to match the actual format
-        const logoMatch = content.match(/<img[^>]*src="([^"]*)"[^>]*alt="Company Logo"[^>]*>/i);
-        const logoUrl = logoMatch ? logoMatch[1] : null;
-        
-        // Remove the logo from the content to avoid duplication
-        const contentWithoutLogo = content.replace(/<img[^>]*src="[^"]*"[^>]*alt="Company Logo"[^>]*>/gi, '');
-        
         // Convert **text** to <strong>text</strong> - handle multiline and complex content
-        let processedContent = contentWithoutLogo;
+        let processedContent = content;
         
         // Process bold text that's not inside HTML tags - more robust pattern
         processedContent = processedContent.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
@@ -2567,13 +3645,16 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         // Clean up any extra whitespace
         processedContent = processedContent.trim();
         
-        return { processedContent, logoUrl };
+        return processedContent;
       };
 
-      const { processedContent, logoUrl } = processQuoteContent(quoteContent);
+      const processedContent = processQuoteContent(quoteContent);
+      
+      // Use the logo URL from API response
+      const logoUrl = quoteLogoUrl;
       
       // Debug logging
-      console.log('Logo URL extracted:', logoUrl);
+      console.log('Logo URL from API:', logoUrl);
       console.log('Original content length:', quoteContent.length);
       console.log('Processed content length:', processedContent.length);
 
@@ -2757,7 +3838,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
       if (typeof window.html2pdf !== 'undefined') {
         const opt = {
           margin: 1,
-          filename: `quote-${project.title}-${new Date().toISOString().split('T')[0]}.pdf`,
+          filename: `quote-${isProjectLoaded ? project.title : 'Project'}-${new Date().toISOString().split('T')[0]}.pdf`,
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: { scale: 2 },
           jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
@@ -2775,7 +3856,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `quote-${project.title}-${new Date().toISOString().split('T')[0]}.html`;
+        a.download = `quote-${isProjectLoaded ? project.title : 'Project'}-${new Date().toISOString().split('T')[0]}.html`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -2817,7 +3898,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
           <div className="px-2 pb-3 pt-2">
             <div className="flex items-center justify-between mb-3">
               <h1 className="text-xs font-bold text-white">
-                {project.title}
+                {isProjectLoaded ? project.title : 'Loading...'}
               </h1>
               <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
                 {project.status}
@@ -3092,7 +4173,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
             <div className="max-w-6xl mx-auto space-y-6 w-full">
               {/* Tabs */}
               <div className="flex space-x-4 overflow-x-auto pb-4">
-                {['Customer Setup', 'BOM Items', 'Labor Types', 'Custom Items', 'Generate with AI', 'Preview'].map((tab) => (
+                {['Customer Setup', 'BOM Items', 'Labor Types', 'Custom Items', 'Generate with AI'].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setActiveQuoteTab(tab)}
@@ -3328,48 +4409,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                     </div>
                   </div>
 
-                  {/* Professional Quote Sections */}
-                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                    <div className="p-6">
-                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Professional Quote Sections</h2>
-                      
-                      <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-6">
-                        <p className="text-sm text-blue-600 dark:text-blue-400">
-                          AI-generated assumptions, exclusions, scope of work, and notes based on your project data and BOM items.
-                        </p>
-                      </div>
 
-                      <div className="flex space-x-3 mb-6">
-                        <button className="flex items-center space-x-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors text-sm font-medium">
-                          <Settings className="w-4 h-4" />
-                          <span>Generate AI Sections</span>
-                        </button>
-                        <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm font-medium">
-                          <Edit3 className="w-4 h-4" />
-                          <span>Edit Sections</span>
-                        </button>
-                      </div>
-
-                      <div className="space-y-6">
-                        <div>
-                          <h3 className="text-base font-medium text-gray-900 dark:text-white mb-3">Scope of Work</h3>
-                          <div className="prose prose-sm dark:prose-invert max-w-none">
-                            <p className="text-gray-600 dark:text-gray-300">
-                              This project covers the complete upgrade of the Semmes Murphy access control head-end system at 6325 Humphreys Blvd, migrating 34 existing doors to a new Gallagher Command Centre platform.
-                            </p>
-                            <ul className="list-disc pl-4 mt-2 space-y-1 text-gray-600 dark:text-gray-300">
-                              <li>Decommissioning: Systematically decommission and remove the existing access control panels located in closets 6325-FL1 and 6325-FL2.</li>
-                              <li>Head-End Installation: Install four (4) Gallagher Controller 7000 standard controllers, four (4) 8 HBUS modules, and associated I/O modules into new enclosures. Install three (3) 8-door supervised power supplies with six (6) 12V 8AH backup batteries.</li>
-                              <li>Field Wiring Termination: Re-terminate all existing door wiring for 34 doors onto the new Gallagher controller and power supply modules. This includes connections for readers, locks, door contacts, and request-to-exit devices.</li>
-                              <li>Reader Replacement: Replace thirty-four (34) existing card readers with thirty-three (33) new Gallagher C300430 T11 Multi-Tech readers and one (1) Gallagher C300460 T20 Multi-Tech Terminal.</li>
-                              <li>Software Installation & Licensing: Install and configure Gallagher Command Centre server software on a customer-provided server. Apply all purchased licenses, including 34 door licenses, workstation and Photo ID licenses, and Exacq Integration licenses, along with the corresponding Software Maintenance Agreements (SMA).</li>
-                              <li>System Configuration & Commissioning: Configure all system parameters, including access schedules, door groups, alarm responses, and cardholder permissions. Test and verify all hardware and software functionality.</li>
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
                 </>
               )}
 
@@ -3869,38 +4909,87 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                         </div>
                       </div>
 
-                      {/* Current Configuration Summary */}
+                      {/* All Pricing Configurations */}
                       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                          Current Configuration Summary
+                        <div className="flex items-center justify-between mb-6">
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                            All Pricing Configurations
                         </h3>
+                          <button
+                            onClick={() => fetchAllPricing()}
+                            className="flex items-center space-x-2 px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                          >
+                            <Settings className="w-4 h-4" />
+                            <span>Refresh</span>
+                          </button>
+                        </div>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                            <h4 className="font-medium text-gray-900 dark:text-white mb-2">Pricing Type</h4>
-                            <p className="text-gray-600 dark:text-gray-300">{bomPricingConfig.type}</p>
+                        {allPricingData.length > 0 ? (
+                          <div className="space-y-4">
+                            {allPricingData.map((pricing: any) => (
+                              <div 
+                                key={pricing.pricing_id} 
+                                className={`border rounded-lg p-4 transition-all ${
+                                  pricing.project_id === parseInt(projectId) 
+                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' 
+                                    : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <div className="flex items-center space-x-3 mb-3">
+                                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                        pricing.project_id === parseInt(projectId)
+                                          ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-300'
+                                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                                      }`}>
+                                        {pricing.project_id === parseInt(projectId) ? 'Current Project' : `Project ${pricing.project_id}`}
                           </div>
-                          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                            <h4 className="font-medium text-gray-900 dark:text-white mb-2">Percentage</h4>
-                            <p className="text-gray-600 dark:text-gray-300">{bomPricingConfig.percentage}%</p>
+                                      <div className="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-300 rounded-full text-xs font-medium">
+                                        {pricing.pricing_type}
                           </div>
-                          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                            <h4 className="font-medium text-gray-900 dark:text-white mb-2">Apply To</h4>
-                            <p className="text-gray-600 dark:text-gray-300">{bomPricingConfig.applyTo}</p>
                           </div>
-                          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                            <h4 className="font-medium text-gray-900 dark:text-white mb-2">Custom Adjustment</h4>
-                            <p className="text-gray-600 dark:text-gray-300">${bomPricingConfig.customAdjustment.toFixed(2)}</p>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Percentage:</span>
+                                        <span className="ml-2 text-sm text-gray-900 dark:text-white">{pricing.percentage}%</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Apply To:</span>
+                                        <span className="ml-2 text-sm text-gray-900 dark:text-white">{pricing.apply_to}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Custom Adjustment:</span>
+                                        <span className="ml-2 text-sm text-gray-900 dark:text-white">${parseFloat(pricing.custom_adjustment || 0).toFixed(2)}</span>
                           </div>
                         </div>
                         
-                        {bomPricingConfig.adjustmentDescription && (
-                          <div className="mt-4 bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                            <h4 className="font-medium text-gray-900 dark:text-white mb-2">Adjustment Description</h4>
-                            <p className="text-gray-600 dark:text-gray-300">{bomPricingConfig.adjustmentDescription}</p>
+                                    {pricing.adjustment_description && (
+                                      <div className="mt-3">
+                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Description:</span>
+                                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{pricing.adjustment_description}</p>
                           </div>
                         )}
                       </div>
+                                  
+
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-center py-8">
+                            <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                              <Settings className="w-6 h-6 text-gray-400" />
+                            </div>
+                            <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Pricing Configurations</h4>
+                            <p className="text-gray-500 dark:text-gray-400">Create your first pricing configuration above to get started.</p>
+                          </div>
+                        )}
+                      </div>
+
+
                     </div>
                   )}
                 </div>
@@ -4381,125 +5470,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                 </div>
               )}
 
-                            {activeQuoteTab === 'Preview' && (
-                <div className="space-y-6">
-                  {/* PDF Preview Header */}
-                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        Quote Report Preview
-                      </h3>
-                      <button
-                        onClick={generatePDF}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium flex items-center space-x-2"
-                      >
-                        <Download className="w-4 h-4" />
-                        <span>Download PDF</span>
-                      </button>
-                    </div>
-                    
-                    {/* PDF Preview Content */}
-                    <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-96 overflow-y-auto">
-                      <div className="bg-white p-6 rounded-lg shadow-sm">
-                        <div className="text-center border-b-2 border-gray-300 pb-4 mb-6">
-                          <div className="text-2xl font-bold text-blue-600 mb-1">FusedAI</div>
-                          <div className="text-lg text-gray-600 mb-2">Professional Quote Report</div>
-                          <div className="text-sm text-gray-500">Generated on: {new Date().toLocaleDateString()}</div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                          <div>
-                            <h4 className="font-semibold text-gray-900 mb-2">Project Details</h4>
-                            <p className="text-sm text-gray-600"><strong>Project:</strong> {project.title}</p>
-                            <p className="text-sm text-gray-600"><strong>Description:</strong> {project.description || 'N/A'}</p>
-                            <p className="text-sm text-gray-600"><strong>Status:</strong> {project.status}</p>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-gray-900 mb-2">Customer Information</h4>
-                            <p className="text-sm text-gray-600"><strong>Company:</strong> {project.company || 'N/A'}</p>
-                            <p className="text-sm text-gray-600"><strong>Contact:</strong> {project.contact?.name || 'N/A'}</p>
-                            <p className="text-sm text-gray-600"><strong>Email:</strong> {project.contact?.email || 'N/A'}</p>
-                            <p className="text-sm text-gray-600"><strong>Phone:</strong> {project.contact?.phone || 'N/A'}</p>
-                          </div>
-                        </div>
 
-                        {/* AI-Generated Sections in PDF Preview */}
-                        <div className="space-y-4 mb-6">
-                          <div>
-                            <h4 className="font-semibold text-gray-900 mb-2 border-b border-gray-300 pb-1">Scope of Work</h4>
-                            <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded">
-                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{aiScopeOfWork}</p>
-                            </div>
-                          </div>
-
-                          <div>
-                            <h4 className="font-semibold text-gray-900 mb-2 border-b border-gray-300 pb-1">Assumptions</h4>
-                            <div className="bg-green-50 border-l-4 border-green-500 p-3 rounded">
-                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{aiAssumptions}</p>
-                            </div>
-                          </div>
-
-                          <div>
-                            <h4 className="font-semibold text-gray-900 mb-2 border-b border-gray-300 pb-1">Exclusions</h4>
-                            <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded">
-                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{aiExclusions}</p>
-                            </div>
-                          </div>
-
-                          <div>
-                            <h4 className="font-semibold text-gray-900 mb-2 border-b border-gray-300 pb-1">Additional Notes</h4>
-                            <div className="bg-yellow-50 border-l-4 border-yellow-500 p-3 rounded">
-                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{aiAdditionalNotes}</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="border-t-2 border-gray-300 pt-4">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="text-center">
-                              <div className="text-xl font-bold text-blue-600">
-                                {(() => {
-                                  try {
-                                    const laborData = sessionStorage.getItem('quoteLaborTypes');
-                                    return laborData ? JSON.parse(laborData).length : 0;
-                                  } catch {
-                                    return 0;
-                                  }
-                                })()}
-                              </div>
-                              <div className="text-sm text-gray-600">Labor Types</div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-xl font-bold text-green-600">
-                                {(() => {
-                                  try {
-                                    const customData = sessionStorage.getItem('quoteCustomItems');
-                                    return customData ? JSON.parse(customData).length : 0;
-                                  } catch {
-                                    return 0;
-                                  }
-                                })()}
-                              </div>
-                              <div className="text-sm text-gray-600">Custom Items</div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-lg font-semibold text-gray-900">
-                                {project.title.length > 15 ? project.title.substring(0, 15) + '...' : project.title}
-                              </div>
-                              <div className="text-sm text-gray-600">Project</div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="text-center mt-6 text-sm text-gray-500">
-                          <p>Thank you for choosing FusedAI for your project needs.</p>
-                          <p>This quote is valid for 30 days from the date of generation.</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
 
             </div>
           </div>
@@ -4513,7 +5484,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Project Name</label>
-                    <p className="text-gray-900 dark:text-white">{project.title}</p>
+                    <p className="text-gray-900 dark:text-white">{isProjectLoaded ? project.title : 'Loading...'}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
@@ -4562,7 +5533,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                         {project.contact.email && (
                       <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
                         <Mail className="w-4 h-4" />
-                            <a href={`mailto:${project.contact.email}?subject=Regarding Project: ${project.title}&body=Hello ${project.contact.name},%0D%0A%0D%0AI am writing regarding the project: ${project.title}.%0D%0A%0D%0ABest regards`} 
+                            <a href={`mailto:${project.contact.email}?subject=Regarding Project: ${isProjectLoaded ? project.title : 'Project'}&body=Hello ${project.contact.name},%0D%0A%0D%0AI am writing regarding the project: ${isProjectLoaded ? project.title : 'Project'}.%0D%0A%0D%0ABest regards`} 
                                className="hover:text-gray-900 dark:hover:text-white transition-colors">
                           {project.contact.email}
                         </a>
@@ -4588,7 +5559,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                 <div className="flex flex-wrap gap-3">
                   {project.contact.email && (
                     <a 
-                      href={`mailto:${project.contact.email}?subject=Regarding Project: ${project.title}&body=Hello ${project.contact.name},%0D%0A%0D%0AI am writing regarding the project: ${project.title}.%0D%0A%0D%0ABest regards`}
+                      href={`mailto:${project.contact.email}?subject=Regarding Project: ${isProjectLoaded ? project.title : 'Project'}&body=Hello ${project.contact.name},%0D%0A%0D%0AI am writing regarding the project: ${isProjectLoaded ? project.title : 'Project'}.%0D%0A%0D%0ABest regards`}
                       className="flex items-center space-x-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
                     >
                     <Mail className="w-4 h-4" />
@@ -4601,7 +5572,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                       const content = `
                         Project Report
                         
-                        Project Name: ${project.title}
+                        Project Name: ${isProjectLoaded ? project.title : 'Project'}
                         Status: ${project.status}
                         ${project.date ? `Due Date: ${project.date}` : ''}
                         ${project.company ? `Company: ${project.company}` : ''}
@@ -4617,7 +5588,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                       const url = window.URL.createObjectURL(blob);
                       const a = document.createElement('a');
                       a.href = url;
-                      a.download = `${project.title} Report.pdf`;
+                      a.download = `${isProjectLoaded ? project.title : 'Project'} Report.pdf`;
                       document.body.appendChild(a);
                       a.click();
                       window.URL.revokeObjectURL(url);
@@ -5262,19 +6233,12 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                    </p>
                  </div>
                  
-                 {estimationResults && (
-                   <div className="flex items-center space-x-2">
-                     <span className="text-sm text-gray-500 dark:text-gray-400">Confidence:</span>
-                     <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-300 rounded text-sm font-medium">
-                       {estimationResults.confidence}%
-                     </span>
-                   </div>
-                 )}
+
                </div>
 
                {/* Main Tabs */}
                <div className="flex space-x-4 border-b border-gray-200 dark:border-gray-700">
-                 {['Overview', 'AI Analysis', 'Pricing', 'Generate'].map((tab) => (
+                 {['Overview', 'AI Analysis', 'Generate'].map((tab) => (
                    <button
                      key={tab}
                      onClick={() => setActiveEstimationTab(tab)}
@@ -5290,98 +6254,193 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                </div>
 
                {/* Overview Tab */}
-               {activeEstimationTab === 'Overview' && estimationResults && (
+               {activeEstimationTab === 'Overview' && (
                  <div className="space-y-6">
+
                    {/* Summary Cards */}
+                   {overviewData && (
                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                     <div className="bg-green-100 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg p-4">
+                     <div className="bg-yellow-100 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
                        <div className="flex items-center space-x-2">
-                         <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                           <span className="text-white text-sm font-bold">↑</span>
+                         <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
+                           <span className="text-white text-sm font-bold">⚙️</span>
                          </div>
                          <div>
-                           <p className="text-sm text-green-700 dark:text-green-300">Best Case Price</p>
-                           <p className="text-xl font-semibold text-green-800 dark:text-green-200">
-                             {formatCurrency(estimationResults.bestCasePrice)}
+                           <p className="text-sm text-yellow-700 dark:text-yellow-300">Custom Adjustment</p>
+                           <p className="text-xl font-semibold text-yellow-800 dark:text-yellow-200">
+                               {formatCurrency(overviewData.cost_summary.custom_adjustment)}
                            </p>
                          </div>
                        </div>
                      </div>
                      
-                     <div className="bg-orange-100 dark:bg-orange-900 border border-orange-200 dark:border-orange-700 rounded-lg p-4">
+                     <div className="bg-indigo-100 dark:bg-indigo-900 border border-indigo-200 dark:border-indigo-700 rounded-lg p-4">
                        <div className="flex items-center space-x-2">
-                         <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                           <span className="text-white text-sm font-bold">↑</span>
+                         <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center">
+                           <span className="text-white text-sm font-bold">📦</span>
                          </div>
                          <div>
-                           <p className="text-sm text-orange-700 dark:text-orange-300">Worst Case Price</p>
-                           <p className="text-xl font-semibold text-orange-800 dark:text-orange-200">
-                             {formatCurrency(estimationResults.worstCasePrice)}
+                           <p className="text-sm text-indigo-700 dark:text-indigo-300">Total Material Cost</p>
+                           <p className="text-xl font-semibold text-indigo-800 dark:text-indigo-200">
+                               {formatCurrency(overviewData.cost_summary.total_material_cost)}
                            </p>
                          </div>
                        </div>
                      </div>
                      
-                     <div className="bg-blue-100 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                     <div className="bg-red-100 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg p-4">
                        <div className="flex items-center space-x-2">
-                         <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                           <span className="text-white text-sm font-bold">📊</span>
+                         <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                           <span className="text-white text-sm font-bold">👥</span>
                          </div>
                          <div>
-                           <p className="text-sm text-blue-700 dark:text-blue-300">Materials (Min)</p>
-                           <p className="text-xl font-semibold text-blue-800 dark:text-blue-200">
-                             {formatCurrency(estimationResults.materialsMin)}
+                           <p className="text-sm text-red-700 dark:text-red-300">Total Labor Cost</p>
+                           <p className="text-xl font-semibold text-red-800 dark:text-red-200">
+                               {formatCurrency(overviewData.cost_summary.total_labor_cost)}
                            </p>
                          </div>
                        </div>
                      </div>
                      
-                     <div className="bg-purple-100 dark:bg-purple-900 border border-purple-200 dark:border-purple-700 rounded-lg p-4">
+                     <div className="bg-emerald-100 dark:bg-emerald-900 border border-emerald-200 dark:border-emerald-700 rounded-lg p-4">
                        <div className="flex items-center space-x-2">
-                         <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
-                           <span className="text-white text-sm font-bold">$</span>
+                         <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center">
+                           <span className="text-white text-sm font-bold">💰</span>
                          </div>
                          <div>
-                           <p className="text-sm text-purple-700 dark:text-purple-300">Margin Applied</p>
-                           <p className="text-xl font-semibold text-purple-800 dark:text-purple-200">
-                             {estimationResults.marginApplied}%
+                           <p className="text-sm text-emerald-700 dark:text-emerald-300">Grand Total</p>
+                           <p className="text-xl font-semibold text-emerald-800 dark:text-emerald-200">
+                               {formatCurrency(overviewData.cost_summary.grand_total)}
                            </p>
                          </div>
                        </div>
                      </div>
                    </div>
+                   )}
 
-                   {/* Sub Tabs */}
-                   <div className="flex space-x-4 border-b border-gray-200 dark:border-gray-700">
-                     {['Analysis', 'Materials', 'AISuggestions', 'Context', 'Discussion', 'ValueEngineering', 'Labor'].map((tab) => (
-                       <button
-                         key={tab}
-                         onClick={() => setActiveEstimationSubTab(tab as 'Analysis' | 'Materials' | 'AISuggestions' | 'Context' | 'Discussion' | 'ValueEngineering' | 'Labor')}
-                         className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                           activeEstimationSubTab === tab
-                             ? 'border-black dark:border-white text-black dark:text-white'
-                             : 'border-transparent text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                         }`}
-                       >
-                         {tab === 'AISuggestions' ? 'AI Suggestions' : tab === 'ValueEngineering' ? 'Value Engineering' : tab}
-                       </button>
-                     ))}
-                   </div>
-
-                   {/* Analysis Content */}
-                   {activeEstimationSubTab === 'Analysis' && (
-                     <div className="space-y-6">
-                       <div className="flex items-center justify-between">
-                         <h4 className="text-lg font-semibold text-gray-900 dark:text-white">AI Reasoning & Analysis</h4>
+                   {/* AI Estimations Containers */}
+                   {overviewData && (
+                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                     {/* Labour Breakdown */}
+                     <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
+                       <div className="flex items-center space-x-2 mb-4">
+                         <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                           <span className="text-white text-xs">👥</span>
+                         </div>
+                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Labour Breakdown</h3>
                        </div>
                        
-                       <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                       <div className="space-y-4">
+                           {overviewData.labor_data.labor_items.map((item: any, index: number) => (
+                             <div key={index} className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4">
+                           <div className="flex justify-between items-start">
+                             <div>
+                                   <h4 className="font-medium text-gray-900 dark:text-white">{item.labor_name}</h4>
+                               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                     Hours: {item.hours}
+                               </p>
+                               <p className="text-sm text-gray-600 dark:text-gray-400">
+                                     Cost: {formatCurrency(item.labor_cost)}
+                               </p>
+                             </div>
+                             <span className="px-2 py-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 text-xs rounded">
+                                   {formatCurrency(item.hourly_rate)}/hr
+                             </span>
+                           </div>
+                         </div>
+                           ))}
+                       </div>
+                     </div>
+
+                     {/* Materials Breakdown */}
+                     <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
+                       <div className="flex items-center space-x-2 mb-4">
+                         <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                           <span className="text-white text-xs">📦</span>
+                         </div>
+                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Materials Breakdown</h3>
+                       </div>
+                       
+                       <div className="text-center mb-4">
+                         <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                             {formatCurrency(overviewData.categories_data.total_material_cost)}
+                         </p>
+                         <p className="text-sm text-gray-600 dark:text-gray-400">Total Materials Cost</p>
+                       </div>
+                       
+                       <div className="space-y-4">
+                           {overviewData.categories_data.categories.map((category: any, index: number) => (
+                           <div key={index} className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4">
+                             <div className="flex justify-between items-start">
+                               <div>
+                                   <h4 className="font-medium text-gray-900 dark:text-white">{category.category_name}</h4>
+                               </div>
+                               <div className="text-right">
+                                   <p className="text-sm text-blue-600 dark:text-blue-400">Cost: {formatCurrency(category.total_category_cost)}</p>
+                               </div>
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     </div>
+                   </div>
+                   )}
+
+                   {/* Pricing Breakdown */}
+                   {overviewData && (
+                   <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
+                     <div className="flex items-center space-x-2 mb-4">
+                       <div className="w-6 h-6 bg-teal-500 rounded-full flex items-center justify-center">
+                         <span className="text-white text-xs">💰</span>
+                       </div>
+                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Pricing Breakdown</h3>
+                       </div>
+                       
+                     <div className="space-y-4">
+                         {overviewData.pricing_data.map((pricing: any, index: number) => (
+                           <div key={index} className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4">
+                         <div className="flex justify-between items-start">
+                           <div>
+                                 <h4 className="font-medium text-gray-900 dark:text-white">{pricing.pricing_type}</h4>
+                             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                   Apply to: {pricing.apply_to}
+                             </p>
+                           </div>
+                           <div className="text-right">
+                             <p className="text-sm text-gray-500 dark:text-gray-400">Type: Percentage</p>
+                             <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                   {pricing.percentage}%
+                                 </p>
+                                 <p className="text-sm text-blue-600 dark:text-blue-400">
+                                   Adjustment: {formatCurrency(parseFloat(pricing.custom_adjustment))}
+                             </p>
+                           </div>
+                           </div>
+                         </div>
+                         ))}
+                       </div>
+                           </div>
+                   )}
+
+                   {/* AI Reasoning & Assumptions */}
+                   {overviewData && (
+                   <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
+                     <div className="flex items-center space-x-2 mb-4">
+                       <div className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center">
+                         <span className="text-white text-xs">🧠</span>
+                       </div>
+                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white">AI Reasoning & Assumptions</h3>
+                     </div>
+                     
+                     <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4">
                          <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
-                           BOM-first estimation using actual BOM data with confidence-based contingency. Materials: ${estimationResults.materialsMin.toLocaleString()}-${estimationResults.materialsMax.toLocaleString()} (from {estimationResults.materialsBreakdown.categories.length} BOM items + 15% contingency based on {estimationResults.confidence}% confidence). Labor: Labor analysis for installing the {estimationResults.materialsBreakdown.categories.length} BOM items listed above considers the complexity of a multi-door access control system, the technical requirements for integration, and industry-standard installation times. The estimation includes programming time, testing, and commissioning activities. Margin applied reflects market conditions and project complexity while maintaining competitive positioning.
+                           Project overview for {overviewData.project_name} (ID: {overviewData.project_id}). The estimation includes comprehensive labor and materials analysis with detailed cost breakdowns and pricing adjustments.
                          </p>
                        </div>
                      </div>
                    )}
+
+
 
                    {activeEstimationSubTab === 'Materials' && (
                      <div className="space-y-6">
@@ -5488,24 +6547,218 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                      <div className="space-y-6">
                        <div className="flex items-center justify-between">
                          <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Customer Discussion Points</h4>
+                               <div className="flex items-center space-x-3">
+                                 <input
+                                   type="text"
+                                   value={additionalContext}
+                                   onChange={(e) => setAdditionalContext(e.target.value)}
+                                   placeholder="Optional context..."
+                                   className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                                 />
+                                 <ShimmerButton
+                                   onClick={async () => {
+                                     try {
+                                       setIsGeneratingDiscussionPoints(true);
+                                       const token = localStorage.getItem('token');
+                                       if (!token) {
+                                         toast({
+                                           title: "Authentication Error",
+                                           description: "Please log in to generate discussion points.",
+                                           variant: "destructive",
+                                         });
+                                         return;
+                                       }
+
+                                       const response = await fetch('https://chikaai.net/api/fusedai/generate-ai-estimation-discussions', {
+                                         method: 'POST',
+                                         headers: {
+                                           'Content-Type': 'application/json',
+                                           'token': token,
+                                         },
+                                         body: JSON.stringify({
+                                           project_id: projectId,
+                                           additional_info: additionalContext || ''
+                                         }),
+                                       });
+
+                                       if (response.ok) {
+                                         const data = await response.json();
+                                         setDiscussionPoints(data.discussion_points);
+                                         toast({
+                                           title: "Success",
+                                           description: "Discussion points generated successfully!",
+                                         });
+                                       } else {
+                                         const errorData = await response.json();
+                                         toast({
+                                           title: "Error",
+                                           description: errorData.detail || "Failed to generate discussion points",
+                                           variant: "destructive",
+                                         });
+                                       }
+                                     } catch (error) {
+                                       console.error('Error generating discussion points:', error);
+                                       toast({
+                                         title: "Error",
+                                         description: "Failed to generate discussion points. Please try again.",
+                                         variant: "destructive",
+                                       });
+                                     } finally {
+                                       setIsGeneratingDiscussionPoints(false);
+                                     }
+                                   }}
+                                   disabled={isGeneratingDiscussionPoints}
+                                   background="rgb(147, 51, 234)"
+                                   className="text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-1"
+                                 >
+                                   {isGeneratingDiscussionPoints ? (
+                                     <>
+                                       <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
+                                       Generating...
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Brain className="w-3 h-3 mr-1" />
+                                       Generate
+                                     </>
+                                   )}
+                                 </ShimmerButton>
+                               </div>
                        </div>
                        
-                       <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                         <div className="flex justify-between items-start">
+                             {!discussionPoints ? (
+                               <div className="text-center py-8">
+                                 <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                 <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                                   No Discussion Points Available
+                                 </h4>
+                                 <p className="text-gray-500 dark:text-gray-400 mb-4">
+                                   Click the Generate button to create AI-powered discussion points for customer meetings.
+                                 </p>
+                               </div>
+                             ) : (
+                               <div className="space-y-6">
+                                 {/* Project Summary */}
+                                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-700">
+                                   <div className="flex items-center justify-between mb-3">
+                                     <h5 className="font-semibold text-blue-900 dark:text-blue-100">Project Summary</h5>
+                                     <button
+                                       onClick={() => setDiscussionPoints(null)}
+                                       className="text-blue-400 hover:text-blue-600 dark:hover:text-blue-300"
+                                     >
+                                       <X className="w-4 h-4" />
+                                     </button>
+                                   </div>
+                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                     <div>
+                                       <span className="text-blue-700 dark:text-blue-300 font-medium">Project:</span>
+                                       <p className="text-blue-900 dark:text-blue-100">{discussionPoints.project_name}</p>
+                                     </div>
+                                     <div>
+                                       <span className="text-blue-700 dark:text-blue-300 font-medium">Customer:</span>
+                                       <p className="text-blue-900 dark:text-blue-100">{discussionPoints.customer_name}</p>
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 {/* Summary Statistics */}
+                                 <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                                   <h5 className="font-semibold text-gray-900 dark:text-white mb-3">Discussion Summary</h5>
+                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                     <div className="text-center">
+                                       <p className="text-gray-500 dark:text-gray-400">Total Points</p>
+                                       <p className="text-xl font-bold text-gray-900 dark:text-white">{discussionPoints.summary.total_discussion_points}</p>
+                                     </div>
+                                     <div className="text-center">
+                                       <p className="text-gray-500 dark:text-gray-400">High Priority</p>
+                                       <p className="text-xl font-bold text-red-600 dark:text-red-400">{discussionPoints.summary.high_priority_points}</p>
+                                     </div>
+                                     <div className="text-center">
+                                       <p className="text-gray-500 dark:text-gray-400">Medium Priority</p>
+                                       <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400">{discussionPoints.summary.medium_priority_points}</p>
+                                     </div>
+                                     <div className="text-center">
+                                       <p className="text-gray-500 dark:text-gray-400">Low Priority</p>
+                                       <p className="text-xl font-bold text-green-600 dark:text-green-400">{discussionPoints.summary.low_priority_points}</p>
+                                     </div>
+                                   </div>
+                                   <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                                     <div>
+                                       <span className="text-gray-500 dark:text-gray-400 font-medium">Critical Categories:</span>
+                                       <div className="flex flex-wrap gap-2 mt-2">
+                                         {discussionPoints.summary.critical_categories.map((category: string, index: number) => (
+                                           <span key={index} className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded">
+                                             {category}
+                                           </span>
+                                         ))}
+                                       </div>
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 {/* Recommended Meeting Agenda */}
+                                 <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 border border-green-200 dark:border-green-700">
+                                   <h5 className="font-semibold text-green-900 dark:text-green-100 mb-3">Recommended Meeting Agenda</h5>
+                                   <p className="text-sm text-green-800 dark:text-green-200">{discussionPoints.summary.recommended_meeting_agenda}</p>
+                                 </div>
+
+                                 {/* Discussion Points */}
+                                 <div className="space-y-4">
+                                   <h5 className="font-semibold text-gray-900 dark:text-white">Discussion Points</h5>
+                                   {discussionPoints.discussion_points.map((point: any, index: number) => (
+                                     <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
+                                       <div className="flex justify-between items-start mb-3">
                            <div className="flex-1">
-                             <div className="flex items-center space-x-2 mb-2">
-                               <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs rounded">Installation</span>
-                               <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 text-xs rounded">high priority</span>
+                                           <div className="flex items-center space-x-2 mb-3">
+                                             <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs rounded">{point.category}</span>
+                                             <span className={`px-2 py-1 text-xs rounded ${
+                                               point.priority === 'high' ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200' :
+                                               point.priority === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200' :
+                                               'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
+                                             }`}>
+                                               {point.priority} priority
+                                             </span>
                              </div>
-                             <h5 className="font-medium text-gray-900 dark:text-white">
-                               How will the installation be coordinated with other ongoing construction activities at the site?
-                             </h5>
-                             <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                               <strong>Impact:</strong> Coordination is crucial to avoid delays and ensure smooth installation without interference from other trades.
+                                           <h6 className="font-medium text-gray-900 dark:text-white text-lg mb-2">{point.question}</h6>
+                                           <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                                             <strong>Impact:</strong> {point.impact}
                              </p>
                            </div>
                          </div>
+
+                                       <div className="space-y-3">
+                                         <div>
+                                           <span className="font-medium text-gray-700 dark:text-gray-300 text-sm">Context:</span>
+                                           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{point.context}</p>
                        </div>
+
+                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                           <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300">Timeline:</span>
+                                             <p className="text-gray-600 dark:text-gray-400">{point.timeline}</p>
+                                           </div>
+                                           <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300">Stakeholders:</span>
+                                             <p className="text-gray-600 dark:text-gray-400">{point.stakeholders.join(', ')}</p>
+                                           </div>
+                                         </div>
+
+                                         {point.suggested_actions && point.suggested_actions.length > 0 && (
+                                           <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300 text-sm">Suggested Actions:</span>
+                                             <ul className="list-disc list-inside space-y-1 mt-2">
+                                               {point.suggested_actions.map((action: string, actionIndex: number) => (
+                                                 <li key={actionIndex} className="text-sm text-gray-600 dark:text-gray-400">{action}</li>
+                                               ))}
+                                             </ul>
+                                           </div>
+                                         )}
+                                       </div>
+                                     </div>
+                                   ))}
+                                 </div>
+                               </div>
+                             )}
                      </div>
                    )}
 
@@ -5629,16 +6882,7 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                          >
                            AI Suggestions
                          </button>
-                         <button
-                           onClick={() => setActiveEstimationSubTab('Context')}
-                           className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-all ${
-                             activeEstimationSubTab === 'Context'
-                               ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-                               : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                           }`}
-                         >
-                           Context
-                         </button>
+
                          <button
                            onClick={() => setActiveEstimationSubTab('Discussion')}
                            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-all ${
@@ -5677,31 +6921,115 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                            <div className="space-y-6">
                              <div className="flex items-center justify-between">
                                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">AI Reasoning & Analysis</h4>
+                         <div className="flex items-center space-x-3">
+                           <input
+                             type="text"
+                             value={additionalContext}
+                             onChange={(e) => setAdditionalContext(e.target.value)}
+                             placeholder="Optional context..."
+                             className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                           />
+                           <ShimmerButton
+                             onClick={async () => {
+                               try {
+                                       setIsGeneratingAnalysis(true);
+                                 const token = localStorage.getItem('token');
+                                 if (!token) {
+                                   toast({
+                                     title: "Authentication Error",
+                                           description: "Please log in to generate AI analysis.",
+                                     variant: "destructive",
+                                   });
+                                   return;
+                                 }
+
+                                       const response = await fetch('https://chikaai.net/api/fusedai/generate-ai-estimation-ai-analysis', {
+                                   method: 'POST',
+                                   headers: {
+                                     'Content-Type': 'application/json',
+                                     'token': token,
+                                   },
+                                   body: JSON.stringify({
+                                     project_id: projectId,
+                                     additional_info: additionalContext || ''
+                                   }),
+                                 });
+
+                                                                          if (response.ok) {
+                                           const data = await response.json();
+                                           setAiAnalysisResponse(data.ai_analysis);
+                                           updateGeneratedData('aiAnalysis', data.ai_analysis);
+                                   toast({
+                                     title: "Success",
+                                           description: "AI analysis generated successfully!",
+                                   });
+                                 } else {
+                                   const errorData = await response.json();
+                                   toast({
+                                     title: "Error",
+                                           description: errorData.detail || "Failed to generate AI analysis",
+                                     variant: "destructive",
+                                   });
+                                 }
+                               } catch (error) {
+                                       console.error('Error generating AI analysis:', error);
+                                 toast({
+                                   title: "Error",
+                                         description: "Failed to generate AI analysis. Please try again.",
+                                   variant: "destructive",
+                                 });
+                               } finally {
+                                       setIsGeneratingAnalysis(false);
+                               }
+                             }}
+                                   disabled={isGeneratingAnalysis}
+                             background="rgb(147, 51, 234)"
+                             className="text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-1"
+                           >
+                                   {isGeneratingAnalysis ? (
+                               <>
+                                 <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
+                                 Generating...
+                               </>
+                             ) : (
+                               <>
+                                 <Brain className="w-3 h-3 mr-1" />
+                                 Generate
+                               </>
+                             )}
+                           </ShimmerButton>
+                         </div>
                              </div>
                              
-                             {!estimationResults ? (
+                             {!aiAnalysisResponse ? (
                                <div className="text-center py-8">
                                  <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                                  <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                                   No Analysis Available
+                                   No AI Analysis Available
                                  </h4>
                                  <p className="text-gray-500 dark:text-gray-400 mb-4">
-                                   Generate an AI estimation first to view detailed analysis.
+                                   Click the Generate button to create AI-powered analysis for your project.
                                  </p>
-                                 <div className="flex justify-center">
-                                   <ShimmerButton
-                                     onClick={() => setActiveEstimationTab('Generate')}
-                                     className="bg-blue-600 hover:bg-blue-700 text-white"
-                                   >
-                                     Generate Estimation
-                                   </ShimmerButton>
-                                 </div>
                                </div>
                              ) : (
                                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                                 <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
-                                   BOM-first estimation using actual BOM data with confidence-based contingency. Materials: ${estimationResults.materialsMin.toLocaleString()}-${estimationResults.materialsMax.toLocaleString()} (from {estimationResults.materialsBreakdown.categories.length} BOM items + 15% contingency based on {estimationResults.confidence}% confidence). Labor: Labor analysis for installing the {estimationResults.materialsBreakdown.categories.length} BOM items listed above considers the complexity of a multi-door access control system, the technical requirements for integration, and industry-standard installation times. The estimation includes programming time, testing, and commissioning activities. Margin applied reflects market conditions and project complexity while maintaining competitive positioning.
-                                 </p>
+                                 <div className="flex items-center justify-between mb-3">
+                                   <h5 className="font-medium text-gray-900 dark:text-white">AI Analysis Response</h5>
+                                   <button
+                                     onClick={() => setAiAnalysisResponse('')}
+                                     className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                   >
+                                     <X className="w-4 h-4" />
+                                   </button>
+                                 </div>
+                                 <div className="prose prose-sm max-w-none">
+                                   <div 
+                                     className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap"
+                                     dangerouslySetInnerHTML={{
+                                       __html: aiAnalysisResponse.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                                     }}
+                                   />
+                                 </div>
                                </div>
                              )}
                            </div>
@@ -5711,39 +7039,159 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                            <div className="space-y-6">
                              <div className="flex items-center justify-between">
                                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Materials Breakdown & Analysis</h4>
+                               <div className="flex items-center space-x-3">
+                                 <input
+                                   type="text"
+                                   value={additionalContext}
+                                   onChange={(e) => setAdditionalContext(e.target.value)}
+                                   placeholder="Optional context..."
+                                   className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                                 />
+                                 <ShimmerButton
+                                   onClick={async () => {
+                                     try {
+                                       setIsGeneratingMaterials(true);
+                                       const token = localStorage.getItem('token');
+                                       if (!token) {
+                                         toast({
+                                           title: "Authentication Error",
+                                           description: "Please log in to generate materials analysis.",
+                                           variant: "destructive",
+                                         });
+                                         return;
+                                       }
+
+                                       const response = await fetch('https://chikaai.net/api/fusedai/generate-ai-estimation-materials', {
+                                         method: 'POST',
+                                         headers: {
+                                           'Content-Type': 'application/json',
+                                           'token': token,
+                                         },
+                                         body: JSON.stringify({
+                                           project_id: projectId,
+                                           additional_info: additionalContext || ''
+                                         }),
+                                       });
+
+                                       if (response.ok) {
+                                         const data = await response.json();
+                                         setMaterialsAnalysis(data.materials_analysis);
+                                         updateGeneratedData('materialsAnalysis', data.materials_analysis);
+                                         toast({
+                                           title: "Success",
+                                           description: "Materials analysis generated successfully!",
+                                         });
+                                       } else {
+                                         const errorData = await response.json();
+                                         toast({
+                                           title: "Error",
+                                           description: errorData.detail || "Failed to generate materials analysis",
+                                           variant: "destructive",
+                                         });
+                                       }
+                                     } catch (error) {
+                                       console.error('Error generating materials analysis:', error);
+                                       toast({
+                                         title: "Error",
+                                         description: "Failed to generate materials analysis. Please try again.",
+                                         variant: "destructive",
+                                       });
+                                     } finally {
+                                       setIsGeneratingMaterials(false);
+                                     }
+                                   }}
+                                   disabled={isGeneratingMaterials}
+                                   background="rgb(147, 51, 234)"
+                                   className="text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-1"
+                                 >
+                                   {isGeneratingMaterials ? (
+                                     <>
+                                       <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
+                                       Generating...
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Brain className="w-3 h-3 mr-1" />
+                                       Generate
+                                     </>
+                                   )}
+                                 </ShimmerButton>
+                               </div>
                              </div>
                              
-                             {!estimationResults ? (
+                             {!materialsAnalysis.length ? (
                                <div className="text-center py-8">
                                  <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                                  <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                                   No Materials Data Available
+                                   No Materials Analysis Available
                                  </h4>
                                  <p className="text-gray-500 dark:text-gray-400 mb-4">
-                                   Generate an AI estimation first to view materials breakdown.
+                                   Click the Generate button to create AI-powered materials analysis for your project.
                                  </p>
-                                 <div className="flex justify-center">
-                                   <ShimmerButton
-                                     onClick={() => setActiveEstimationTab('Generate')}
-                                     className="bg-blue-600 hover:bg-blue-700 text-white"
-                                   >
-                                     Generate Estimation
-                                   </ShimmerButton>
-                                 </div>
                                </div>
                              ) : (
                                <div className="space-y-4">
-                                 {estimationResults.materialsBreakdown.categories.map((category, index) => (
-                                   <div key={index} className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                                     <div className="flex justify-between items-start">
+                                 {materialsAnalysis.map((category, index) => (
+                                   <div key={index} className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                                     <div className="flex justify-between items-start mb-3">
                                        <div>
-                                         <h5 className="font-medium text-gray-900 dark:text-white">{category.name}</h5>
+                                         <h5 className="font-medium text-gray-900 dark:text-white text-lg">{category.category_name}</h5>
                                          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{category.description}</p>
                                        </div>
-                                       <div className="text-right">
-                                         <p className="text-sm text-gray-500 dark:text-gray-400">Cost: {formatCurrency(category.cost)}</p>
-                                         <p className="text-sm text-gray-500 dark:text-gray-400">Customer Price: {formatCurrency(category.customer)}</p>
                                        </div>
+                                     
+                                     {/* Specific Components */}
+                                     <div className="mb-3">
+                                       <h6 className="font-semibold text-blue-600 dark:text-blue-400 text-sm mb-2">Specific Components:</h6>
+                                       <ul className="list-disc list-inside space-y-1">
+                                         {category.specific_components.map((component: string, compIndex: number) => (
+                                           <li key={compIndex} className="text-sm text-gray-700 dark:text-gray-300">{component}</li>
+                                         ))}
+                                       </ul>
+                                     </div>
+                                     
+                                     {/* Potentially Missing Components */}
+                                     <div className="mb-3">
+                                       <h6 className="font-semibold text-orange-600 dark:text-orange-400 text-sm mb-2 flex items-center">
+                                         <span className="mr-1">▲</span>
+                                         Potentially Missing Components:
+                                       </h6>
+                                       <ul className="list-disc list-inside space-y-1">
+                                         {category.potentially_missing_components.map((component: string, compIndex: number) => (
+                                           <li key={compIndex} className="text-sm text-gray-700 dark:text-gray-300">{component}</li>
+                                         ))}
+                                       </ul>
+                                   </div>
+                                     
+                                     {/* Risk Factors */}
+                                     <div className="mb-3">
+                                       <h6 className="font-semibold text-red-600 dark:text-red-400 text-sm mb-2 flex items-center">
+                                         <span className="mr-1">▲</span>
+                                         Risk Factors:
+                                       </h6>
+                                       <ul className="list-disc list-inside space-y-1">
+                                         {category.risk_factors.map((risk: string, riskIndex: number) => (
+                                           <li key={riskIndex} className="text-sm text-gray-700 dark:text-gray-300">{risk}</li>
+                                         ))}
+                                       </ul>
+                                     </div>
+
+                                     {/* Cost Analysis */}
+                                     <div className="mb-3">
+                                       <h6 className="font-semibold text-green-600 dark:text-green-400 text-sm mb-2">Cost Analysis:</h6>
+                                       <p className="text-sm text-gray-700 dark:text-gray-300">{category.cost_analysis}</p>
+                                     </div>
+
+                                     {/* Technical Notes */}
+                                     <div className="mb-3">
+                                       <h6 className="font-semibold text-purple-600 dark:text-purple-400 text-sm mb-2">Technical Notes:</h6>
+                                       <p className="text-sm text-gray-700 dark:text-gray-300">{category.technical_notes}</p>
+                                     </div>
+
+                                     {/* Recommendations */}
+                                     <div>
+                                       <h6 className="font-semibold text-indigo-600 dark:text-indigo-400 text-sm mb-2">Recommendations:</h6>
+                                       <p className="text-sm text-gray-700 dark:text-gray-300">{category.recommendations}</p>
                                      </div>
                                    </div>
                                  ))}
@@ -5755,123 +7203,701 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                          {activeEstimationSubTab === 'AISuggestions' && (
                            <div className="space-y-6">
                              <div className="flex items-center justify-between">
-                               <h4 className="text-lg font-semibold text-gray-900 dark:text-white">+ AI Material Suggestions</h4>
+                               <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                                 <Brain className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400" />
+                                 AI Material Suggestions
+                               </h4>
+                               <div className="flex items-center space-x-3">
+                                 <input
+                                   type="text"
+                                   value={additionalContext}
+                                   onChange={(e) => setAdditionalContext(e.target.value)}
+                                   placeholder="Optional context..."
+                                   className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                                 />
                                <ShimmerButton
-                                 onClick={() => {}}
-                                 className="bg-blue-600 hover:bg-blue-700 text-white"
-                               >
-                                 Generate Suggestions
+                                   onClick={async () => {
+                                     try {
+                                       setIsGeneratingSuggestions(true);
+                                       const token = localStorage.getItem('token');
+                                       if (!token) {
+                                         toast({
+                                           title: "Authentication Error",
+                                           description: "Please log in to generate AI suggestions.",
+                                           variant: "destructive",
+                                         });
+                                         return;
+                                       }
+
+                                       const response = await fetch('https://chikaai.net/api/fusedai/generate-ai-estimation-ai-suggestions', {
+                                         method: 'POST',
+                                         headers: {
+                                           'Content-Type': 'application/json',
+                                           'token': token,
+                                         },
+                                         body: JSON.stringify({
+                                           project_id: projectId,
+                                           additional_info: additionalContext || ''
+                                         }),
+                                       });
+
+                                       if (response.ok) {
+                                         const data = await response.json();
+                                         setAiSuggestions(data.suggestions);
+                                         updateGeneratedData('aiSuggestions', data.suggestions);
+                                         toast({
+                                           title: "Success",
+                                           description: "AI suggestions generated successfully!",
+                                         });
+                                       } else {
+                                         const errorData = await response.json();
+                                         toast({
+                                           title: "Error",
+                                           description: errorData.detail || "Failed to generate AI suggestions",
+                                           variant: "destructive",
+                                         });
+                                       }
+                                     } catch (error) {
+                                       console.error('Error generating AI suggestions:', error);
+                                       toast({
+                                         title: "Error",
+                                         description: "Failed to generate AI suggestions. Please try again.",
+                                         variant: "destructive",
+                                       });
+                                     } finally {
+                                       setIsGeneratingSuggestions(false);
+                                     }
+                                   }}
+                                   disabled={isGeneratingSuggestions}
+                                   background="rgb(147, 51, 234)"
+                                   className="text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-1"
+                                 >
+                                   {isGeneratingSuggestions ? (
+                                     <>
+                                       <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
+                                       Generating...
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Brain className="w-3 h-3 mr-1" />
+                                       Generate
+                                     </>
+                                   )}
                                </ShimmerButton>
+                               </div>
                              </div>
                              
-                             <p className="text-sm text-gray-600 dark:text-gray-400">
-                               AI analyzes vendor quotes to suggest materials that may be missing from your BOM. Accept or dismiss suggestions as needed.
-                             </p>
-                             
-                             <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                               <div className="flex justify-between items-start">
-                                 <div>
-                                   <h5 className="font-medium text-gray-900 dark:text-white">Access Control Cards</h5>
-                                   <div className="flex items-center space-x-2 mt-2">
-                                     <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded">Materials</span>
-                                     <span className="text-sm text-gray-500 dark:text-gray-400">Qty: 100.000 EA</span>
-                                     <span className="text-sm text-green-600 dark:text-green-400 font-medium">$15.00 each</span>
-                                     <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 text-xs rounded">95% confidence</span>
-                                   </div>
-                                 </div>
-                                 <div className="flex space-x-2">
-                                   <button className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded">✓ Accept</button>
-                                   <button className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded">X Dismiss</button>
-                                 </div>
+                             {!aiSuggestions ? (
+                               <div className="text-center py-8">
+                                 <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                 <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                                   No AI Suggestions Available
+                                 </h4>
+                                 <p className="text-gray-500 dark:text-gray-400 mb-4">
+                                   Click the Generate button to get AI-powered material suggestions for your project.
+                           </p>
+                         </div>
+                       ) : (
+                         <div className="space-y-6">
+                           {/* Project Summary */}
+                                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-700">
+                             <div className="flex items-center justify-between mb-3">
+                                     <h5 className="font-semibold text-blue-900 dark:text-blue-100">Project Summary</h5>
+                               <button
+                                       onClick={() => setAiSuggestions(null)}
+                                       className="text-blue-400 hover:text-blue-600 dark:hover:text-blue-300"
+                               >
+                                 <X className="w-4 h-4" />
+                               </button>
+                             </div>
+                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                               <div>
+                                       <span className="text-blue-700 dark:text-blue-300 font-medium">Project:</span>
+                                       <p className="text-blue-900 dark:text-blue-100">{aiSuggestions.project_name}</p>
                                </div>
+                               <div>
+                                       <span className="text-blue-700 dark:text-blue-300 font-medium">Current Cost:</span>
+                                       <p className="text-blue-900 dark:text-blue-100">{formatCurrency(aiSuggestions.current_material_cost)}</p>
+                               </div>
+                               <div>
+                                       <span className="text-blue-700 dark:text-blue-300 font-medium">Additional Cost:</span>
+                                       <p className="text-blue-900 dark:text-blue-100">{formatCurrency(aiSuggestions.cost_impact.estimated_additional_cost)} ({aiSuggestions.cost_impact.percentage_increase}% increase)</p>
+                               </div>
+                             </div>
+                           </div>
+
+                                 {/* Suggested Materials */}
+                                 <div className="space-y-4">
+                                   <h5 className="font-semibold text-gray-900 dark:text-white">Suggested Materials</h5>
+                                   {aiSuggestions.suggested_materials.map((material: any, index: number) => (
+                                     <div key={index} className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                                       <div className="flex justify-between items-start mb-3">
+                                         <div className="flex-1">
+                                           <h6 className="font-medium text-gray-900 dark:text-white text-lg">{material.material_name}</h6>
+                                           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{material.description}</p>
+                               </div>
+                                         <div className="text-right ml-4">
+                                           <p className="text-sm text-green-600 dark:text-green-400 font-medium">{formatCurrency(material.estimated_total)}</p>
+                                           <p className="text-xs text-gray-500 dark:text-gray-400">{material.estimated_quantity} {material.unit} × {formatCurrency(material.estimated_unit_price)}</p>
+                               </div>
+                               </div>
+                                       
+                                       <div className="flex items-center space-x-2 mb-3">
+                                         <span className={`px-2 py-1 text-xs rounded ${
+                                           material.priority === 'High' ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200' :
+                                           material.priority === 'Medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200' :
+                                           'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
+                                         }`}>
+                                           {material.priority} Priority
+                                         </span>
+                                         <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded">
+                                           {material.category}
+                                         </span>
+                                         <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 text-xs rounded">
+                                           {material.confidence_level}% confidence
+                                         </span>
+                               </div>
+
+                                       <div className="space-y-2 text-sm">
+                                 <div>
+                                           <span className="font-medium text-gray-700 dark:text-gray-300">Reasoning:</span>
+                                           <p className="text-gray-600 dark:text-gray-400">{material.reasoning}</p>
+                                   </div>
+                                 <div>
+                                           <span className="font-medium text-gray-700 dark:text-gray-300">Vendor Suggestions:</span>
+                                           <p className="text-gray-600 dark:text-gray-400">{material.vendor_suggestions.join(', ')}</p>
+                                 </div>
+                                         {material.notes && (
+                                 <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300">Notes:</span>
+                                             <p className="text-gray-600 dark:text-gray-400">{material.notes}</p>
+                                 </div>
+                                         )}
+                               </div>
+                             </div>
+                                   ))}
+                                 </div>
+
+                                 {/* Missing Categories */}
+                                 {aiSuggestions.missing_categories && aiSuggestions.missing_categories.length > 0 && (
+                                   <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-700">
+                                     <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-3">Missing Categories</h5>
+                                     <div className="flex flex-wrap gap-2">
+                                       {aiSuggestions.missing_categories.map((category: string, index: number) => (
+                                         <span key={index} className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200 text-sm rounded">
+                                           {category}
+                                         </span>
+                                       ))}
                              </div>
                            </div>
                          )}
 
-                         {activeEstimationSubTab === 'Context' && (
-                           <div className="space-y-6">
-                             <div className="flex items-center justify-between">
-                               <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Project Context</h4>
-                               <ShimmerButton
-                                 onClick={() => {}}
-                                 className="bg-blue-600 hover:bg-blue-700 text-white"
-                               >
-                                 + Add Context
-                               </ShimmerButton>
-                             </div>
-                             
-                             <p className="text-sm text-gray-600 dark:text-gray-400">
-                               Provide additional project understanding to improve AI estimation accuracy.
-                             </p>
-                             
-                             <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                               <div className="flex justify-between items-start">
-                                 <div className="flex-1">
-                                   <div className="flex items-center space-x-2 mb-2">
-                                     <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 text-xs rounded">medium</span>
-                                   </div>
-                                   <h5 className="font-medium text-gray-900 dark:text-white">Testing Context Suggestions</h5>
-                                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                     Need dedicated wireless access points and network monitoring equipment for reliable system connectivity and troubleshooting capabilities.
-                                   </p>
+                                 {/* Risk Assessment */}
+                                 {aiSuggestions.risk_assessment && (
+                                   <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-200 dark:border-red-700">
+                                     <h5 className="font-semibold text-red-900 dark:text-red-100 mb-3">Risk Assessment</h5>
+                                     <div className="space-y-3">
+                                       {aiSuggestions.risk_assessment.high_priority_missing && aiSuggestions.risk_assessment.high_priority_missing.length > 0 && (
+                                 <div>
+                                           <h6 className="font-medium text-red-800 dark:text-red-200 text-sm mb-2">High Priority Missing:</h6>
+                                           <ul className="list-disc list-inside space-y-1">
+                                             {aiSuggestions.risk_assessment.high_priority_missing.map((item: string, index: number) => (
+                                               <li key={index} className="text-sm text-red-700 dark:text-red-300">{item}</li>
+                                             ))}
+                                           </ul>
                                  </div>
-                                 <div className="flex space-x-2 ml-4">
-                                   <button className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                                     <Edit3 className="w-4 h-4" />
-                                   </button>
-                                   <button className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400">
-                                     <Trash2 className="w-4 h-4" />
-                                   </button>
-                                 </div>
+                                       )}
+                                       {aiSuggestions.risk_assessment.medium_priority_missing && aiSuggestions.risk_assessment.medium_priority_missing.length > 0 && (
+                                         <div>
+                                           <h6 className="font-medium text-yellow-800 dark:text-yellow-200 text-sm mb-2">Medium Priority Missing:</h6>
+                                           <ul className="list-disc list-inside space-y-1">
+                                             {aiSuggestions.risk_assessment.medium_priority_missing.map((item: string, index: number) => (
+                                               <li key={index} className="text-sm text-yellow-700 dark:text-yellow-300">{item}</li>
+                                             ))}
+                                           </ul>
                                </div>
+                                       )}
+                                       {aiSuggestions.risk_assessment.low_priority_missing && aiSuggestions.risk_assessment.low_priority_missing.length > 0 && (
+                                         <div>
+                                           <h6 className="font-medium text-green-800 dark:text-green-200 text-sm mb-2">Low Priority Missing:</h6>
+                                           <ul className="list-disc list-inside space-y-1">
+                                             {aiSuggestions.risk_assessment.low_priority_missing.map((item: string, index: number) => (
+                                               <li key={index} className="text-sm text-green-700 dark:text-green-300">{item}</li>
+                                             ))}
+                                           </ul>
                              </div>
+                                       )}
+                           </div>
+                                   </div>
+                                 )}
+
+                                 {/* Recommendations */}
+                                 {aiSuggestions.recommendations && aiSuggestions.recommendations.length > 0 && (
+                                   <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 border border-green-200 dark:border-green-700">
+                                     <h5 className="font-semibold text-green-900 dark:text-green-100 mb-3">Recommendations</h5>
+                                     <ul className="list-disc list-inside space-y-2">
+                                       {aiSuggestions.recommendations.map((recommendation: string, index: number) => (
+                                         <li key={index} className="text-sm text-green-800 dark:text-green-200">{recommendation}</li>
+                                       ))}
+                                     </ul>
+                                   </div>
+                                 )}
+                               </div>
+                             )}
                            </div>
                          )}
+
+
 
                          {activeEstimationSubTab === 'Discussion' && (
                            <div className="space-y-6">
                              <div className="flex items-center justify-between">
                                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Customer Discussion Points</h4>
+                               <div className="flex items-center space-x-3">
+                                 <input
+                                   type="text"
+                                   value={additionalContext}
+                                   onChange={(e) => setAdditionalContext(e.target.value)}
+                                   placeholder="Optional context..."
+                                   className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                                 />
+                               <ShimmerButton
+                                   onClick={async () => {
+                                     try {
+                                       setIsGeneratingDiscussionPoints(true);
+                                       const token = localStorage.getItem('token');
+                                       if (!token) {
+                                         toast({
+                                           title: "Authentication Error",
+                                           description: "Please log in to generate discussion points.",
+                                           variant: "destructive",
+                                         });
+                                         return;
+                                       }
+
+                                       const response = await fetch('https://chikaai.net/api/fusedai/generate-ai-estimation-discussions', {
+                                         method: 'POST',
+                                         headers: {
+                                           'Content-Type': 'application/json',
+                                           'token': token,
+                                         },
+                                         body: JSON.stringify({
+                                           project_id: projectId,
+                                           additional_info: additionalContext || ''
+                                         }),
+                                       });
+
+                                       if (response.ok) {
+                                         const data = await response.json();
+                                         setDiscussionPoints(data.discussion_points);
+                                         toast({
+                                           title: "Success",
+                                           description: "Discussion points generated successfully!",
+                                         });
+                                       } else {
+                                         const errorData = await response.json();
+                                         toast({
+                                           title: "Error",
+                                           description: errorData.detail || "Failed to generate discussion points",
+                                           variant: "destructive",
+                                         });
+                                       }
+                                     } catch (error) {
+                                       console.error('Error generating discussion points:', error);
+                                       toast({
+                                         title: "Error",
+                                         description: "Failed to generate discussion points. Please try again.",
+                                         variant: "destructive",
+                                       });
+                                     } finally {
+                                       setIsGeneratingDiscussionPoints(false);
+                                     }
+                                   }}
+                                   disabled={isGeneratingDiscussionPoints}
+                                   background="rgb(147, 51, 234)"
+                                   className="text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-1"
+                                 >
+                                   {isGeneratingDiscussionPoints ? (
+                                     <>
+                                       <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
+                                       Generating...
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Brain className="w-3 h-3 mr-1" />
+                                       Generate
+                                     </>
+                                   )}
+                               </ShimmerButton>
+                               </div>
                              </div>
                              
-                             <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                               <div className="flex justify-between items-start">
-                                 <div className="flex-1">
-                                   <div className="flex items-center space-x-2 mb-2">
-                                     <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs rounded">Installation</span>
-                                     <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 text-xs rounded">high priority</span>
+                             {!discussionPoints ? (
+                               <div className="text-center py-8">
+                                 <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                 <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                                   No Discussion Points Available
+                                 </h4>
+                                 <p className="text-gray-500 dark:text-gray-400 mb-4">
+                                   Click the Generate button to create AI-powered discussion points for customer meetings.
+                                 </p>
+                               </div>
+                             ) : (
+                               <div className="space-y-6">
+                                 {/* Project Summary */}
+                                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-700">
+                                   <div className="flex items-center justify-between mb-3">
+                                     <h5 className="font-semibold text-blue-900 dark:text-blue-100">Project Summary</h5>
+                                     <button
+                                       onClick={() => setDiscussionPoints(null)}
+                                       className="text-blue-400 hover:text-blue-600 dark:hover:text-blue-300"
+                                     >
+                                       <X className="w-4 h-4" />
+                                     </button>
                                    </div>
-                                   <h5 className="font-medium text-gray-900 dark:text-white">
-                                     How will the installation be coordinated with other ongoing construction activities at the site?
-                                   </h5>
-                                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                                     <strong>Impact:</strong> Coordination is crucial to avoid delays and ensure smooth installation without interference from other trades.
+                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                     <div>
+                                       <span className="text-blue-700 dark:text-blue-300 font-medium">Project:</span>
+                                       <p className="text-blue-900 dark:text-blue-100">{discussionPoints.project_name}</p>
+                                     </div>
+                                     <div>
+                                       <span className="text-blue-700 dark:text-blue-300 font-medium">Customer:</span>
+                                       <p className="text-blue-900 dark:text-blue-100">{discussionPoints.customer_name}</p>
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 {/* Summary Statistics */}
+                                 <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                                   <h5 className="font-semibold text-gray-900 dark:text-white mb-3">Discussion Summary</h5>
+                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                     <div className="text-center">
+                                       <p className="text-gray-500 dark:text-gray-400">Total Points</p>
+                                       <p className="text-xl font-bold text-gray-900 dark:text-white">{discussionPoints.summary.total_discussion_points}</p>
+                                   </div>
+                                     <div className="text-center">
+                                       <p className="text-gray-500 dark:text-gray-400">High Priority</p>
+                                       <p className="text-xl font-bold text-red-600 dark:text-red-400">{discussionPoints.summary.high_priority_points}</p>
+                                 </div>
+                                     <div className="text-center">
+                                       <p className="text-gray-500 dark:text-gray-400">Medium Priority</p>
+                                       <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400">{discussionPoints.summary.medium_priority_points}</p>
+                                 </div>
+                                     <div className="text-center">
+                                       <p className="text-gray-500 dark:text-gray-400">Low Priority</p>
+                                       <p className="text-xl font-bold text-green-600 dark:text-green-400">{discussionPoints.summary.low_priority_points}</p>
+                               </div>
+                             </div>
+                                   <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                                     <div>
+                                       <span className="text-gray-500 dark:text-gray-400 font-medium">Critical Categories:</span>
+                                       <div className="flex flex-wrap gap-2 mt-2">
+                                         {discussionPoints.summary.critical_categories.map((category: string, index: number) => (
+                                           <span key={index} className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded">
+                                             {category}
+                                           </span>
+                                         ))}
+                           </div>
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 {/* Recommended Meeting Agenda */}
+                                 <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 border border-green-200 dark:border-green-700">
+                                   <h5 className="font-semibold text-green-900 dark:text-green-100 mb-3">Recommended Meeting Agenda</h5>
+                                   <p className="text-sm text-green-800 dark:text-green-200">{discussionPoints.summary.recommended_meeting_agenda}</p>
+                             </div>
+                             
+                                 {/* Discussion Points */}
+                                 <div className="space-y-4">
+                                   <h5 className="font-semibold text-gray-900 dark:text-white">Discussion Points</h5>
+                                   {discussionPoints.discussion_points.map((point: any, index: number) => (
+                                     <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
+                                       <div className="flex justify-between items-start mb-3">
+                                 <div className="flex-1">
+                                           <div className="flex items-center space-x-2 mb-3">
+                                             <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs rounded">{point.category}</span>
+                                             <span className={`px-2 py-1 text-xs rounded ${
+                                               point.priority === 'high' ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200' :
+                                               point.priority === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200' :
+                                               'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
+                                             }`}>
+                                               {point.priority} priority
+                                             </span>
+                                   </div>
+                                           <h6 className="font-medium text-gray-900 dark:text-white text-lg mb-2">{point.question}</h6>
+                                           <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                                             <strong>Impact:</strong> {point.impact}
                                    </p>
                                  </div>
                                </div>
+
+                                       <div className="space-y-3">
+                                         <div>
+                                           <span className="font-medium text-gray-700 dark:text-gray-300 text-sm">Context:</span>
+                                           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{point.context}</p>
                              </div>
+
+                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                           <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300">Timeline:</span>
+                                             <p className="text-gray-600 dark:text-gray-400">{point.timeline}</p>
+                                           </div>
+                                           <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300">Stakeholders:</span>
+                                             <p className="text-gray-600 dark:text-gray-400">{point.stakeholders.join(', ')}</p>
+                                           </div>
+                                         </div>
+
+                                         {point.suggested_actions && point.suggested_actions.length > 0 && (
+                                           <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300 text-sm">Suggested Actions:</span>
+                                             <ul className="list-disc list-inside space-y-1 mt-2">
+                                               {point.suggested_actions.map((action: string, actionIndex: number) => (
+                                                 <li key={actionIndex} className="text-sm text-gray-600 dark:text-gray-400">{action}</li>
+                                               ))}
+                                             </ul>
+                                           </div>
+                                         )}
+                                       </div>
+                                     </div>
+                                   ))}
+                                 </div>
+                               </div>
+                             )}
                            </div>
                          )}
 
                          {activeEstimationSubTab === 'ValueEngineering' && (
                            <div className="space-y-6">
                              <div className="flex items-center justify-between">
+                               <div className="flex items-center">
+                                 <Lightbulb className="w-5 h-5 mr-2 text-yellow-500" />
                                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Value Engineering Opportunities</h4>
                              </div>
-                             
-                             <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                               <div className="flex justify-between items-start">
-                                 <div className="flex-1">
-                                   <div className="flex items-center space-x-2 mb-2">
-                                     <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 text-xs rounded">Cost Savings</span>
-                                     <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 text-xs rounded">medium impact</span>
-                                   </div>
-                                   <h5 className="font-medium text-gray-900 dark:text-white">
-                                     Consider using remote programming and diagnostics to reduce on-site labor time.
-                                   </h5>
-                                 </div>
+                               <div className="flex items-center space-x-3">
+                                 <input
+                                   type="text"
+                                   value={additionalContext}
+                                   onChange={(e) => setAdditionalContext(e.target.value)}
+                                   placeholder="Optional context..."
+                                   className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                                 />
+                                 <ShimmerButton
+                                   onClick={async () => {
+                                     try {
+                                       setIsGeneratingValueEngineering(true);
+                                       const token = localStorage.getItem('token');
+                                       if (!token) {
+                                         toast({
+                                           title: "Authentication Error",
+                                           description: "Please log in to generate value engineering opportunities.",
+                                           variant: "destructive",
+                                         });
+                                         return;
+                                       }
+
+                                       const response = await fetch('https://chikaai.net/api/fusedai/generate-ai-estimation-value-engineering', {
+                                         method: 'POST',
+                                         headers: {
+                                           'Content-Type': 'application/json',
+                                           'token': token,
+                                         },
+                                         body: JSON.stringify({
+                                           project_id: projectId,
+                                           additional_info: additionalContext || ''
+                                         }),
+                                       });
+
+                                       if (response.ok) {
+                                         const data = await response.json();
+                                         setValueEngineering(data.value_engineering);
+                                         updateGeneratedData('valueEngineering', data.value_engineering);
+                                         toast({
+                                           title: "Success",
+                                           description: "Value engineering opportunities generated successfully!",
+                                         });
+                                       } else {
+                                         const errorData = await response.json();
+                                         toast({
+                                           title: "Error",
+                                           description: errorData.detail || "Failed to generate value engineering opportunities",
+                                           variant: "destructive",
+                                         });
+                                       }
+                                     } catch (error) {
+                                       console.error('Error generating value engineering opportunities:', error);
+                                       toast({
+                                         title: "Error",
+                                         description: "Failed to generate value engineering opportunities. Please try again.",
+                                         variant: "destructive",
+                                       });
+                                     } finally {
+                                       setIsGeneratingValueEngineering(false);
+                                     }
+                                   }}
+                                   disabled={isGeneratingValueEngineering}
+                                   background="rgb(147, 51, 234)"
+                                   className="text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-1"
+                                 >
+                                   {isGeneratingValueEngineering ? (
+                                     <>
+                                       <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
+                                       Generating...
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Brain className="w-3 h-3 mr-1" />
+                                       Generate
+                                     </>
+                                   )}
+                                 </ShimmerButton>
                                </div>
                              </div>
+                             
+                             {!valueEngineering ? (
+                               <div className="text-center py-8">
+                                 <Lightbulb className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                                 <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                                   No Value Engineering Opportunities Available
+                                 </h4>
+                                 <p className="text-gray-500 dark:text-gray-400 mb-4">
+                                   Click the Generate button to discover cost-saving and efficiency improvement opportunities.
+                                 </p>
+                               </div>
+                             ) : (
+                               <div className="space-y-6">
+                                 {/* Project Summary */}
+                                 <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4 border border-yellow-200 dark:border-yellow-700">
+                                   <div className="flex items-center justify-between mb-3">
+                                     <h5 className="font-semibold text-yellow-900 dark:text-yellow-100">Project Summary</h5>
+                                     <button
+                                       onClick={() => setValueEngineering(null)}
+                                       className="text-yellow-400 hover:text-yellow-600 dark:hover:text-yellow-300"
+                                     >
+                                       <X className="w-4 h-4" />
+                                     </button>
+                                   </div>
+                                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                     <div>
+                                       <span className="text-yellow-700 dark:text-yellow-300 font-medium">Project:</span>
+                                       <p className="text-yellow-900 dark:text-yellow-100">{valueEngineering.project_name}</p>
+                                     </div>
+                                     <div>
+                                       <span className="text-yellow-700 dark:text-yellow-300 font-medium">Current Cost:</span>
+                                       <p className="text-yellow-900 dark:text-yellow-100">{formatCurrency(valueEngineering.current_total_cost)}</p>
+                                     </div>
+                                     <div>
+                                       <span className="text-yellow-700 dark:text-yellow-300 font-medium">Potential Savings:</span>
+                                       <p className="text-yellow-900 dark:text-yellow-100">{formatCurrency(valueEngineering.summary.total_potential_savings)}</p>
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 {/* Summary Statistics */}
+                                 <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                                   <h5 className="font-semibold text-gray-900 dark:text-white mb-3">Summary Statistics</h5>
+                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                     <div className="text-center">
+                                       <p className="text-gray-500 dark:text-gray-400">Total Opportunities</p>
+                                       <p className="text-xl font-bold text-gray-900 dark:text-white">{valueEngineering.summary.number_of_opportunities}</p>
+                                     </div>
+                                     <div className="text-center">
+                                       <p className="text-gray-500 dark:text-gray-400">High Impact</p>
+                                       <p className="text-xl font-bold text-red-600 dark:text-red-400">{valueEngineering.summary.high_impact_opportunities}</p>
+                                     </div>
+                                     <div className="text-center">
+                                       <p className="text-gray-500 dark:text-gray-400">Medium Impact</p>
+                                       <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400">{valueEngineering.summary.medium_impact_opportunities}</p>
+                                     </div>
+                                     <div className="text-center">
+                                       <p className="text-gray-500 dark:text-gray-400">Low Impact</p>
+                                       <p className="text-xl font-bold text-green-600 dark:text-green-400">{valueEngineering.summary.low_impact_opportunities}</p>
+                                     </div>
+                                   </div>
+                                   <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                       <div>
+                                         <span className="text-gray-500 dark:text-gray-400">Implementation Timeline:</span>
+                                         <p className="text-gray-900 dark:text-white font-medium">{valueEngineering.summary.implementation_timeline}</p>
+                                       </div>
+                                       <div>
+                                         <span className="text-gray-500 dark:text-gray-400">Overall Risk:</span>
+                                         <p className="text-gray-900 dark:text-white font-medium">{valueEngineering.summary.overall_risk_assessment}</p>
+                                       </div>
+                                       <div>
+                                         <span className="text-gray-500 dark:text-gray-400">Total Savings:</span>
+                                         <p className="text-green-600 dark:text-green-400 font-bold">{formatCurrency(valueEngineering.summary.total_potential_savings)}</p>
+                                       </div>
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 {/* Value Engineering Opportunities */}
+                                 <div className="space-y-4">
+                                   <h5 className="font-semibold text-gray-900 dark:text-white">Value Engineering Opportunities</h5>
+                                   {valueEngineering.value_engineering_opportunities.map((opportunity: any, index: number) => (
+                                     <div key={index} className="border border-green-200 dark:border-green-700 rounded-lg p-4 bg-white dark:bg-gray-800">
+                                       <div className="flex justify-between items-start mb-3">
+                                 <div className="flex-1">
+                                           <div className="flex items-center space-x-2 mb-3">
+                                             <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                             <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 text-xs rounded font-medium">{opportunity.category}</span>
+                                   </div>
+                                           <h6 className="font-medium text-gray-900 dark:text-white text-lg mb-2">{opportunity.opportunity}</h6>
+                                           <p className="text-sm text-green-600 dark:text-green-400 mb-2">{opportunity.potential_savings}</p>
+                                           <p className="text-sm text-orange-600 dark:text-orange-400 italic mb-3">Tradeoffs: {opportunity.tradeoffs}</p>
+                                 </div>
+                                         <div className="text-right ml-4">
+                                           <p className="text-sm text-green-600 dark:text-green-400 font-medium">{formatCurrency(opportunity.estimated_savings_amount)}</p>
+                                           <span className={`px-2 py-1 text-xs rounded ${
+                                             opportunity.impact === 'high' ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200' :
+                                             opportunity.impact === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200' :
+                                             'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
+                                           }`}>
+                                             {opportunity.impact} impact
+                                           </span>
+                               </div>
+                             </div>
+
+                                       <div className="space-y-3">
+                                         <p className="text-sm text-gray-700 dark:text-gray-300">{opportunity.description}</p>
+                                         
+                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                           <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300">Implementation Difficulty:</span>
+                                             <p className="text-gray-600 dark:text-gray-400">{opportunity.implementation_difficulty}</p>
+                                           </div>
+                                           <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300">Time to Implement:</span>
+                                             <p className="text-gray-600 dark:text-gray-400">{opportunity.time_to_implement}</p>
+                                           </div>
+                                           <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300">Risk Level:</span>
+                                             <p className="text-gray-600 dark:text-gray-400">{opportunity.risk_level}</p>
+                                           </div>
+                                           <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300">Estimated Savings:</span>
+                                             <p className="text-green-600 dark:text-green-400 font-medium">{formatCurrency(opportunity.estimated_savings_amount)}</p>
+                                           </div>
+                                         </div>
+
+                                         {opportunity.recommended_actions && opportunity.recommended_actions.length > 0 && (
+                                           <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300 text-sm">Recommended Actions:</span>
+                                             <ul className="list-disc list-inside space-y-1 mt-2">
+                                               {opportunity.recommended_actions.map((action: string, actionIndex: number) => (
+                                                 <li key={actionIndex} className="text-sm text-gray-600 dark:text-gray-400">{action}</li>
+                                               ))}
+                                             </ul>
+                                           </div>
+                                         )}
+                                       </div>
+                                     </div>
+                                   ))}
+                                 </div>
+                               </div>
+                             )}
                            </div>
                          )}
 
@@ -5879,59 +7905,301 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                            <div className="space-y-6">
                              <div className="flex items-center justify-between">
                                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Labor Analysis</h4>
+                               <div className="flex items-center space-x-3">
+                                 <input
+                                   type="text"
+                                   value={additionalContext}
+                                   onChange={(e) => setAdditionalContext(e.target.value)}
+                                   placeholder="Optional context..."
+                                   className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
+                                 />
+                                 <ShimmerButton
+                                   onClick={async () => {
+                                     try {
+                                       setIsGeneratingLaborAnalysis(true);
+                                       const token = localStorage.getItem('token');
+                                       if (!token) {
+                                         toast({
+                                           title: "Authentication Error",
+                                           description: "Please log in to generate labor analysis.",
+                                           variant: "destructive",
+                                         });
+                                         return;
+                                       }
+
+                                       const response = await fetch('https://chikaai.net/api/fusedai/generate-ai-estimation-labor-estimates', {
+                                         method: 'POST',
+                                         headers: {
+                                           'Content-Type': 'application/json',
+                                           'token': token,
+                                         },
+                                         body: JSON.stringify({
+                                           project_id: projectId,
+                                           additional_info: additionalContext || ''
+                                         }),
+                                       });
+
+                                       if (response.ok) {
+                                         const data = await response.json();
+                                         setLaborAnalysis(data.labor_analysis);
+                                         updateGeneratedData('laborAnalysis', data.labor_analysis);
+                                         toast({
+                                           title: "Success",
+                                           description: "Labor analysis generated successfully!",
+                                         });
+                                       } else {
+                                         const errorData = await response.json();
+                                         toast({
+                                           title: "Error",
+                                           description: errorData.detail || "Failed to generate labor analysis",
+                                           variant: "destructive",
+                                         });
+                                       }
+                                     } catch (error) {
+                                       console.error('Error generating labor analysis:', error);
+                                       toast({
+                                         title: "Error",
+                                         description: "Failed to generate labor analysis. Please try again.",
+                                         variant: "destructive",
+                                       });
+                                     } finally {
+                                       setIsGeneratingLaborAnalysis(false);
+                                     }
+                                   }}
+                                   disabled={isGeneratingLaborAnalysis}
+                                   background="rgb(147, 51, 234)"
+                                   className="text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-1"
+                                 >
+                                   {isGeneratingLaborAnalysis ? (
+                                     <>
+                                       <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
+                                       Generating...
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Brain className="w-3 h-3 mr-1" />
+                                       Generate
+                                     </>
+                                   )}
+                                 </ShimmerButton>
+                               </div>
                              </div>
                              
-                             {!estimationResults ? (
+                             {!laborAnalysis ? (
                                <div className="text-center py-8">
                                  <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                                  <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                                   No Labor Data Available
+                                   No Labor Analysis Available
                                  </h4>
                                  <p className="text-gray-500 dark:text-gray-400 mb-4">
-                                   Generate an AI estimation first to view labor analysis.
+                                   Click the Generate button to create AI-powered labor analysis for your project.
                                  </p>
-                                 <div className="flex justify-center">
-                                   <ShimmerButton
-                                     onClick={() => setActiveEstimationTab('Generate')}
-                                     className="bg-blue-600 hover:bg-blue-700 text-white"
-                                   >
-                                     Generate Estimation
-                                   </ShimmerButton>
-                                 </div>
                                </div>
                              ) : (
+                               <div className="space-y-6">
+                                 {/* Project Summary */}
+                                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-700">
+                                   <div className="flex items-center justify-between mb-3">
+                                     <h5 className="font-semibold text-blue-900 dark:text-blue-100">Labor Summary</h5>
+                                     <button
+                                       onClick={() => setLaborAnalysis(null)}
+                                       className="text-blue-400 hover:text-blue-600 dark:hover:text-blue-300"
+                                     >
+                                       <X className="w-4 h-4" />
+                                     </button>
+                                 </div>
+                                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                                     <div>
+                                       <span className="text-blue-700 dark:text-blue-300 font-medium">Project:</span>
+                                       <p className="text-blue-900 dark:text-blue-100">{laborAnalysis.project_name}</p>
+                               </div>
+                                     <div>
+                                       <span className="text-blue-700 dark:text-blue-300 font-medium">Total Cost:</span>
+                                       <p className="text-blue-900 dark:text-blue-100">{formatCurrency(laborAnalysis.labor_summary.total_labor_cost)}</p>
+                                     </div>
+                                     <div>
+                                       <span className="text-blue-700 dark:text-blue-300 font-medium">Total Hours:</span>
+                                       <p className="text-blue-900 dark:text-blue-100">{laborAnalysis.labor_summary.total_labor_hours}</p>
+                                     </div>
+                                     <div>
+                                       <span className="text-blue-700 dark:text-blue-300 font-medium">Avg Rate:</span>
+                                       <p className="text-blue-900 dark:text-blue-100">{formatCurrency(laborAnalysis.labor_summary.average_hourly_rate)}/hr</p>
+                                     </div>
+                                     <div>
+                                       <span className="text-blue-700 dark:text-blue-300 font-medium">Labor Ratio:</span>
+                                       <p className="text-blue-900 dark:text-blue-100">{laborAnalysis.labor_summary.labor_to_material_ratio}%</p>
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 {/* Labor Analysis */}
+                                 <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                                   <h5 className="font-semibold text-gray-900 dark:text-white mb-4">Labor Analysis</h5>
+                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                     <div>
+                                       <h6 className="font-medium text-gray-900 dark:text-white mb-2">Efficiency Assessment</h6>
+                                       <p className="text-sm text-gray-700 dark:text-gray-300">{laborAnalysis.labor_analysis.efficiency_assessment}</p>
+                                     </div>
+                                     <div>
+                                       <h6 className="font-medium text-gray-900 dark:text-white mb-2">Rate Competitiveness</h6>
+                                       <p className="text-sm text-gray-700 dark:text-gray-300">{laborAnalysis.labor_analysis.rate_competitiveness}</p>
+                                     </div>
+                                     <div>
+                                       <h6 className="font-medium text-gray-900 dark:text-white mb-2">Labor Distribution</h6>
+                                       <p className="text-sm text-gray-700 dark:text-gray-300">{laborAnalysis.labor_analysis.labor_distribution}</p>
+                                     </div>
+                                     <div>
+                                       <h6 className="font-medium text-gray-900 dark:text-white mb-2">Industry Comparison</h6>
+                                       <p className="text-sm text-gray-700 dark:text-gray-300">{laborAnalysis.labor_analysis.industry_comparison}</p>
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 {/* Optimization Opportunities */}
+                                 <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 border border-green-200 dark:border-green-700">
+                                   <h5 className="font-semibold text-green-900 dark:text-green-100 mb-3">Optimization Opportunities</h5>
+                                   <ul className="list-disc list-inside space-y-1">
+                                     {laborAnalysis.labor_analysis.optimization_opportunities.map((opportunity: string, index: number) => (
+                                       <li key={index} className="text-sm text-green-800 dark:text-green-200">{opportunity}</li>
+                                     ))}
+                                   </ul>
+                                 </div>
+
+                                 {/* Risk Factors */}
+                                 <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-700">
+                                   <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-3">Risk Factors</h5>
+                                   <ul className="list-disc list-inside space-y-1">
+                                     {laborAnalysis.labor_analysis.risk_factors.map((risk: string, index: number) => (
+                                       <li key={index} className="text-sm text-orange-800 dark:text-orange-200">{risk}</li>
+                                     ))}
+                                   </ul>
+                                 </div>
+
+                                 {/* Detailed Labor Estimates */}
                                <div className="space-y-4">
-                                 {Object.entries(estimationResults.laborBreakdown).map(([key, labor]) => (
-                                   <div key={key} className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                                     <div className="flex justify-between items-start">
+                                   <h5 className="font-semibold text-gray-900 dark:text-white">Detailed Labor Estimates</h5>
+                                   {laborAnalysis.detailed_labor_estimates.map((estimate: any, index: number) => (
+                                     <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
+                                       <div className="flex justify-between items-start mb-3">
+                                         <div className="flex-1">
+                                           <h6 className="font-medium text-gray-900 dark:text-white text-lg mb-2">{estimate.labor_name}</h6>
+                                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                        <div>
-                                         <h5 className="font-medium text-gray-900 dark:text-white capitalize">
-                                           {key.replace(/([A-Z])/g, ' $1')}
-                                         </h5>
-                                         <div className="grid grid-cols-3 gap-4 text-sm mt-2">
+                                               <span className="text-gray-500 dark:text-gray-400">Current Hours:</span>
+                                               <p className="text-gray-900 dark:text-white font-medium">{estimate.current_hours}</p>
+                                             </div>
                                            <div>
-                                             <p className="text-gray-500 dark:text-gray-400">Rate</p>
-                                             <p className="font-medium text-gray-900 dark:text-white">
-                                               {formatCurrency(labor.rate)}/hr
-                                             </p>
+                                               <span className="text-gray-500 dark:text-gray-400">Recommended Hours:</span>
+                                               <p className="text-green-600 dark:text-green-400 font-medium">{estimate.recommended_hours}</p>
                                            </div>
                                            <div>
-                                             <p className="text-gray-500 dark:text-gray-400">Hours</p>
-                                             <p className="font-medium text-gray-900 dark:text-white">
-                                               {labor.hours.min} - {labor.hours.max}
-                                             </p>
+                                               <span className="text-gray-500 dark:text-gray-400">Current Rate:</span>
+                                               <p className="text-gray-900 dark:text-white font-medium">{formatCurrency(estimate.current_rate)}/hr</p>
                                            </div>
                                            <div>
-                                             <p className="text-gray-500 dark:text-gray-400">Cost</p>
-                                             <p className="font-medium text-gray-900 dark:text-white">
-                                               {formatCurrency(labor.cost.min)} - {formatCurrency(labor.cost.max)}
-                                             </p>
+                                               <span className="text-gray-500 dark:text-gray-400">Recommended Rate:</span>
+                                               <p className="text-green-600 dark:text-green-400 font-medium">{formatCurrency(estimate.recommended_rate)}/hr</p>
                                            </div>
                                          </div>
                                        </div>
+                                         <div className="text-right ml-4">
+                                           <p className="text-sm text-green-600 dark:text-green-400 font-medium">{formatCurrency(estimate.estimated_savings)}</p>
+                                           <span className={`px-2 py-1 text-xs rounded ${
+                                             estimate.optimization_potential === 'High' ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200' :
+                                             estimate.optimization_potential === 'Medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200' :
+                                             'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
+                                           }`}>
+                                             {estimate.optimization_potential} potential
+                                           </span>
                                      </div>
                                    </div>
-                                 ))}
+
+                                       <div className="space-y-3">
+                                         <div className="flex items-center space-x-4 text-sm">
+                                           <div>
+                                             <span className="text-gray-500 dark:text-gray-400">Efficiency Score:</span>
+                                             <p className="text-gray-900 dark:text-white font-medium">{estimate.efficiency_score}%</p>
+                                           </div>
+                                           <div>
+                                             <span className="text-gray-500 dark:text-gray-400">Risk Level:</span>
+                                             <p className="text-gray-900 dark:text-white font-medium">{estimate.risk_level}</p>
+                                           </div>
+                                         </div>
+
+                                         {estimate.recommendations && estimate.recommendations.length > 0 && (
+                                           <div>
+                                             <span className="font-medium text-gray-700 dark:text-gray-300 text-sm">Recommendations:</span>
+                                             <ul className="list-disc list-inside space-y-1 mt-2">
+                                               {estimate.recommendations.map((recommendation: string, recIndex: number) => (
+                                                 <li key={recIndex} className="text-sm text-gray-600 dark:text-gray-400">{recommendation}</li>
+                                               ))}
+                                             </ul>
+                               </div>
+                             )}
+                                       </div>
+                                     </div>
+                                   ))}
+                                 </div>
+
+                                 {/* Resource Planning */}
+                                 <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-700">
+                                   <h5 className="font-semibold text-purple-900 dark:text-purple-100 mb-3">Resource Planning</h5>
+                                   <div className="space-y-4">
+                                     <div>
+                                       <h6 className="font-medium text-purple-800 dark:text-purple-200 text-sm mb-2">Additional Resources Needed:</h6>
+                                       <ul className="list-disc list-inside space-y-1">
+                                         {laborAnalysis.resource_planning.additional_resources_needed.map((resource: string, index: number) => (
+                                           <li key={index} className="text-sm text-purple-700 dark:text-purple-300">{resource}</li>
+                                         ))}
+                                       </ul>
+                                     </div>
+                                     <div>
+                                       <h6 className="font-medium text-purple-800 dark:text-purple-200 text-sm mb-2">Skill Requirements:</h6>
+                                       <ul className="list-disc list-inside space-y-1">
+                                         {laborAnalysis.resource_planning.skill_requirements.map((skill: string, index: number) => (
+                                           <li key={index} className="text-sm text-purple-700 dark:text-purple-300">{skill}</li>
+                                         ))}
+                                       </ul>
+                                     </div>
+                                     <div>
+                                       <h6 className="font-medium text-purple-800 dark:text-purple-200 text-sm mb-2">Timeline Considerations:</h6>
+                                       <p className="text-sm text-purple-700 dark:text-purple-300">{laborAnalysis.resource_planning.timeline_considerations}</p>
+                                     </div>
+                                   </div>
+                                 </div>
+
+                                 {/* Recommendations */}
+                                 <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 border border-indigo-200 dark:border-indigo-700">
+                                   <h5 className="font-semibold text-indigo-900 dark:text-indigo-100 mb-3">Recommendations</h5>
+                                   <div className="space-y-4">
+                                     <div>
+                                       <h6 className="font-medium text-indigo-800 dark:text-indigo-200 text-sm mb-2">Immediate Actions:</h6>
+                                       <ul className="list-disc list-inside space-y-1">
+                                         {laborAnalysis.recommendations.immediate_actions.map((action: string, index: number) => (
+                                           <li key={index} className="text-sm text-indigo-700 dark:text-indigo-300">{action}</li>
+                                         ))}
+                                       </ul>
+                                     </div>
+                                     <div>
+                                       <h6 className="font-medium text-indigo-800 dark:text-indigo-200 text-sm mb-2">Long-term Improvements:</h6>
+                                       <ul className="list-disc list-inside space-y-1">
+                                         {laborAnalysis.recommendations.long_term_improvements.map((improvement: string, index: number) => (
+                                           <li key={index} className="text-sm text-indigo-700 dark:text-indigo-300">{improvement}</li>
+                                         ))}
+                                       </ul>
+                                     </div>
+                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-indigo-200 dark:border-indigo-700">
+                                       <div>
+                                         <span className="text-indigo-700 dark:text-indigo-300 font-medium">Cost Savings Potential:</span>
+                                         <p className="text-indigo-900 dark:text-indigo-100 font-bold">{formatCurrency(laborAnalysis.recommendations.cost_savings_potential)}</p>
+                                       </div>
+                                       <div>
+                                         <span className="text-indigo-700 dark:text-indigo-300 font-medium">Efficiency Improvements:</span>
+                                         <p className="text-indigo-900 dark:text-indigo-100">{laborAnalysis.recommendations.efficiency_improvements}</p>
+                                       </div>
+                                     </div>
+                                   </div>
+                                 </div>
                                </div>
                              )}
                            </div>
@@ -6152,165 +8420,91 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                  </div>
                )}
 
-               {/* Pricing Tab */}
-               {activeEstimationTab === 'Pricing' && (
-                 <div className="space-y-6">
-                   <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                       Pricing Configuration
-                     </h3>
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                       <div>
-                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                           Pricing Type
-                         </label>
-                         <Select 
-                           value={pricingConfig.type} 
-                           onValueChange={(value) => setPricingConfig(prev => ({ ...prev, type: value }))}
-                         >
-                           <SelectTrigger className="w-full">
-                             <SelectValue />
-                           </SelectTrigger>
-                           <SelectContent>
-                             <SelectItem value="Margin">Margin</SelectItem>
-                             <SelectItem value="Markup">Markup</SelectItem>
-                           </SelectContent>
-                         </Select>
-                       </div>
-                       <div>
-                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                           Percentage (%)
-                         </label>
-                         <input
-                           type="number"
-                           value={pricingConfig.percentage}
-                           onChange={(e) => setPricingConfig(prev => ({ ...prev, percentage: parseFloat(e.target.value) || 0 }))}
-                           min="0"
-                           step="0.01"
-                           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
-                         />
-                       </div>
-                       <div>
-                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                           Apply To
-                         </label>
-                         <Select 
-                           value={pricingConfig.applyTo} 
-                           onValueChange={(value) => setPricingConfig(prev => ({ ...prev, applyTo: value }))}
-                         >
-                           <SelectTrigger className="w-full">
-                             <SelectValue />
-                           </SelectTrigger>
-                           <SelectContent>
-                             <SelectItem value="Materials Only">Materials Only</SelectItem>
-                             <SelectItem value="Labor Only">Labor Only</SelectItem>
-                             <SelectItem value="Materials and Labor">Materials and Labor</SelectItem>
-                           </SelectContent>
-                         </Select>
-                       </div>
-                       <div>
-                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                           Custom Adjustment ($)
-                         </label>
-                         <input
-                           type="number"
-                           value={pricingConfig.customAdjustment}
-                           onChange={(e) => setPricingConfig(prev => ({ ...prev, customAdjustment: parseFloat(e.target.value) || 0 }))}
-                           min="0"
-                           step="0.01"
-                           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
-                         />
-                       </div>
-                       <div className="md:col-span-2">
-                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                           Adjustment Description
-                         </label>
-                         <input
-                           type="text"
-                           value={pricingConfig.adjustmentDescription}
-                           onChange={(e) => setPricingConfig(prev => ({ ...prev, adjustmentDescription: e.target.value }))}
-                           placeholder="e.g., Project complexity bonus"
-                           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white"
-                         />
-                       </div>
-                     </div>
-                     <div className="mt-6">
-                       <ShimmerButton
-                         onClick={handleSavePricingConfig}
-                         className="bg-green-600 hover:bg-green-700 text-white"
-                       >
-                         $ Save Pricing Configuration
-                       </ShimmerButton>
-                     </div>
-                   </div>
-                 </div>
-               )}
+
 
                {/* Generate Tab */}
                {activeEstimationTab === 'Generate' && (
                  <div className="space-y-6">
-                   <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                       Generate AI Estimation
-                     </h3>
-                     <div className="space-y-4">
-                       <div>
-                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                           Additional Context (Optional)
-                         </label>
-                         <textarea
-                           value={additionalContext}
-                           onChange={(e) => setAdditionalContext(e.target.value)}
-                           placeholder="Provide any additional context for the estimation (e.g., special requirements, timeline constraints, complexity factors)"
-                           rows={4}
-                           className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-black focus:border-black dark:focus:ring-white dark:focus:border-white resize-none"
-                         />
+                   {/* PDF Generation Section */}
+                   <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                     <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Generate Comprehensive Report</h4>
+                     <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                       Create a comprehensive PDF report containing all generated AI analysis data including materials analysis, value engineering opportunities, labor analysis, and discussion points.
+                     </p>
+                     
+                     <div className="space-y-3">
+                       <div className="flex items-center justify-between">
+                         <span className="text-sm text-gray-600 dark:text-gray-400">Available Data:</span>
+                         <div className="flex space-x-2">
+                           {allGeneratedData.estimationResults && (
+                             <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 text-xs rounded">Estimation</span>
+                           )}
+                           {allGeneratedData.aiAnalysis && (
+                             <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded">AI Analysis</span>
+                           )}
+                           {allGeneratedData.materialsAnalysis && (
+                             <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200 text-xs rounded">Materials</span>
+                           )}
+                           {allGeneratedData.aiSuggestions && (
+                             <span className="px-2 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-200 text-xs rounded">Suggestions</span>
+                           )}
+                           {allGeneratedData.valueEngineering && (
+                             <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 text-xs rounded">Value Engineering</span>
+                           )}
+                           {allGeneratedData.laborAnalysis && (
+                             <span className="px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200 text-xs rounded">Labor</span>
+                           )}
+                           {allGeneratedData.discussionPoints && (
+                             <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 text-xs rounded">Discussion</span>
+                           )}
                        </div>
-                       <div className="flex justify-center">
+                       </div>
+                       
+                                               <div className="flex justify-center space-x-4">
                          <ShimmerButton
-                           onClick={generateAIEstimation}
-                           disabled={isGeneratingEstimation}
-                           className="bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                         >
-                           {isGeneratingEstimation ? (
+                            onClick={previewComprehensivePDF}
+                            disabled={isGeneratingPDF || Object.keys(allGeneratedData).length === 0}
+                            background="rgb(59, 130, 246)"
+                            className="text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isGeneratingPDF ? (
                              <>
                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                               Generating...
+                                Generating PDF...
                              </>
                            ) : (
                              <>
-                               <Brain className="w-4 h-4 mr-2" />
-                               Generate Estimation
+                                <Eye className="w-4 h-4 mr-2" />
+                                Preview PDF Report
+                              </>
+                            )}
+                          </ShimmerButton>
+                          
+                          <ShimmerButton
+                            onClick={generateComprehensivePDF}
+                            disabled={isGeneratingPDF || Object.keys(allGeneratedData).length === 0}
+                            background="rgb(220, 38, 38)"
+                            className="text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isGeneratingPDF ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                                Generating PDF...
+                              </>
+                            ) : (
+                              <>
+                                <Download className="w-4 h-4 mr-2" />
+                                Download PDF Report
                              </>
                            )}
                          </ShimmerButton>
-                       </div>
-                     </div>
                    </div>
 
-                   {/* How AI Estimation Works */}
-                   <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                     <div className="flex items-start space-x-3">
-                       <Info className="w-5 h-5 text-blue-500 mt-0.5" />
-                       <div>
-                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                           How AI Estimation Works
-                         </h3>
-                         <ul className="space-y-2 text-gray-700 dark:text-gray-300">
-                           <li className="flex items-start space-x-2">
-                             <span className="text-blue-500 mt-1">•</span>
-                             <span>Analyzes project description and uploaded documents</span>
-                           </li>
-                           <li className="flex items-start space-x-2">
-                             <span className="text-blue-500 mt-1">•</span>
-                             <span>Uses configured labor types and hourly rates</span>
-                           </li>
-                           <li className="flex items-start space-x-2">
-                             <span className="text-blue-500 mt-1">•</span>
-                             <span>Applies your pricing configuration (markup/margin)</span>
-                           </li>
-                         </ul>
-                       </div>
+                       {Object.keys(allGeneratedData).length === 0 && (
+                         <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+                           Generate some AI analysis data first to create a comprehensive report.
+                         </p>
+                       )}
                      </div>
                    </div>
                  </div>
@@ -6328,7 +8522,8 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
                    <div className="flex justify-center">
                      <ShimmerButton
                        onClick={() => setActiveEstimationTab('Generate')}
-                       className="bg-purple-600 hover:bg-purple-700 text-white"
+                       background="rgb(147, 51, 234)"
+                       className="text-white"
                      >
                        <Brain className="w-4 h-4 mr-2" />
                        Generate AI Estimation
