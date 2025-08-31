@@ -4237,6 +4237,14 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
             </div>
           </div>
 
+          <!-- Scope of Work Section -->
+          <div class="scope-section">
+            <h2>SCOPE OF WORK</h2>
+            <div class="scope-content">
+              ${aiScopeOfWork.split('\\n').map(line => `<div style="margin-bottom: 8px;">${line}</div>`).join('')}
+            </div>
+          </div>
+
           <!-- Line Items Table -->
           <div class="line-items">
             <h2>Line Items</h2>
@@ -4314,26 +4322,6 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
             </table>
           </div>
 
-          <!-- Signature Section -->
-          <div class="signature-section">
-            <div class="signature-box">
-              <div class="signature-line"></div>
-              <div class="signature-label">Customer Signature</div>
-            </div>
-            <div class="signature-box">
-              <div class="signature-line"></div>
-              <div class="signature-label">Date</div>
-            </div>
-          </div>
-
-          <!-- Scope of Work Section -->
-          <div class="scope-section">
-            <h2>SCOPE OF WORK</h2>
-            <div class="scope-content">
-              ${aiScopeOfWork.split('\\n').map(line => `<div style="margin-bottom: 8px;">${line}</div>`).join('')}
-            </div>
-          </div>
-
           <!-- Additional Sections -->
           <div class="additional-sections">
             <h2>ASSUMPTIONS</h2>
@@ -4350,6 +4338,18 @@ export default function ProjectChatPage({ params }: { params: Promise<{ id: stri
             <ul>
               ${aiAdditionalNotes.split('\\n').filter(line => line.trim()).map(line => `<li>${line.trim()}</li>`).join('')}
             </ul>
+          </div>
+
+          <!-- Signature Section -->
+          <div class="signature-section">
+            <div class="signature-box">
+              <div class="signature-line"></div>
+              <div class="signature-label">Customer Signature</div>
+            </div>
+            <div class="signature-box">
+              <div class="signature-line"></div>
+              <div class="signature-label">Date</div>
+            </div>
           </div>
         </body>
         </html>
