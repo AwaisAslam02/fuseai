@@ -41,6 +41,7 @@ export default function SignupPage() {
     setIsGoogleLoading(true);
     
     try {
+      window.location.href = "https://chikaai.net/api/auth/google";
       // Exchange authorization code for access token
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
@@ -138,7 +139,7 @@ export default function SignupPage() {
 
   const handleGoogleButtonClick = () => {
     setIsGoogleLoading(true);
-
+   /*
     const clientId = '839908787822-7qd5cbus54ash9a8qcli1kbeml9onc3t.apps.googleusercontent.com';
     const redirectUri = window.location.origin;
     const scope = 'openid email profile';
@@ -157,6 +158,8 @@ export default function SignupPage() {
 
     // Redirect to Google OAuth
     window.location.href = googleAuthUrl;
+    */
+    window.location.href = "https://chikaai.net/api/auth/google";
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
