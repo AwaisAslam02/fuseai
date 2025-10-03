@@ -41,7 +41,6 @@ export default function SignupPage() {
     setIsGoogleLoading(true);
     
     try {
-      window.location.href = "https://chikaai.net/api/auth/google";
       // Exchange authorization code for access token
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
@@ -139,8 +138,8 @@ export default function SignupPage() {
 
   const handleGoogleButtonClick = () => {
     setIsGoogleLoading(true);
-   /*
-    const clientId = '839908787822-7qd5cbus54ash9a8qcli1kbeml9onc3t.apps.googleusercontent.com';
+
+    /*const clientId = '839908787822-7qd5cbus54ash9a8qcli1kbeml9onc3t.apps.googleusercontent.com';
     const redirectUri = window.location.origin;
     const scope = 'openid email profile';
     const responseType = 'code';
@@ -156,10 +155,11 @@ export default function SignupPage() {
       `access_type=offline&` +
       `prompt=select_account`;
 
-    // Redirect to Google OAuth
-    window.location.href = googleAuthUrl;
-    */
-    window.location.href = "https://chikaai.net/api/auth/google";
+    // Redirect to Google OAuth */
+    console.log("🔵 Button clicked!"); // Added this for debugging
+    setIsGoogleLoading(true);
+    console.log("🔵 About to redirect to:", "https://chikaai.net/api/fusedai/auth/google"); 
+    window.location.href = "http://127.0.0.1:8000/api/fusedai/auth/google";
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
